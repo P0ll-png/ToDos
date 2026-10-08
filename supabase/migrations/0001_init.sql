@@ -29,7 +29,7 @@ create table public.subjects (
 create table public.schedule_slots (
   id         uuid primary key default gen_random_uuid(),
   subject_id uuid not null references public.subjects(id) on delete cascade,
-  day        smallint not null check (day between 1 and 5),  -- 1=Mon .. 5=Fri
+  day        smallint not null check (day between 1 and 6),  -- 1=Mon .. 6=Sat
   start_time time not null,
   end_time   time not null
 );

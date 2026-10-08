@@ -1,9 +1,13 @@
 /**
- * Header — app title and the auth/admin entry points. The Members (admin)
- * button renders only for officers; that is UI
+ * Header — a circular logo holder, the app title, and the auth/admin entry
+ * points. The Members (admin) button renders only for officers; that is UI
  * convenience, not a security boundary (AdminPanel/setRole trust RLS). Sign in
  * is optional — anonymous visitors get the full read-only app. All entry points
  * are real <button>s with the global focus ring.
+ *
+ * Responsive (<=640px): the title text and the signed-in account name collapse
+ * away, and the sign in/out control becomes an icon-only button. The logo and
+ * the Appearance/Members icons remain. See .header-* rules in base.css.
  */
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -39,8 +43,13 @@ export function Header() {
         color: 'var(--text)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <h1 style={{ fontSize: '1.125rem', margin: 0 }}>II-CCSAD || Class To-Do Board</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+        <span className="header-logo" aria-hidden="true">
+          <LogoMark />
+        </span>
+        <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
+          II-CCSAD || Class To-Do Board
+        </h1>
       </div>
 
       <nav style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -66,24 +75,39 @@ export function Header() {
 
         {session ? (
           <>
-            <span className="muted" style={{ color: 'var(--muted)' }}>
+            <span
+              className="header-account-name muted"
+              style={{ color: 'var(--muted)' }}
+            >
               {displayName}
             </span>
             <button
               type="button"
               onClick={handleSignOut}
+              className="header-auth-btn"
+              aria-label="Sign out"
+              title="Sign out"
               style={secondaryButtonStyle}
             >
-              Sign out
+              <span className="header-auth-label">Sign out</span>
+              <span className="header-auth-icon">
+                <SignOutIcon />
+              </span>
             </button>
           </>
         ) : (
           <button
             type="button"
             onClick={() => setShowAuth(true)}
+            className="header-auth-btn"
+            aria-label="Sign in"
+            title="Sign in"
             style={accentButtonStyle}
           >
-            Sign in
+            <span className="header-auth-label">Sign in</span>
+            <span className="header-auth-icon">
+              <SignInIcon />
+            </span>
           </button>
         )}
       </nav>
@@ -104,6 +128,71 @@ export function Header() {
         </Modal>
       )}
     </header>
+  );
+}
+
+/** Logo mark shown inside the circular header holder. Decorative. */
+function LogoMark() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  );
+}
+
+/** Sign-in (log-in) icon, shown on small screens in place of the label. */
+function SignInIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <polyline points="10 17 15 12 10 7" />
+      <line x1="15" y1="12" x2="3" y2="12" />
+    </svg>
+  );
+}
+
+/** Sign-out (log-out) icon, shown on small screens in place of the label. */
+function SignOutIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
   );
 }
 

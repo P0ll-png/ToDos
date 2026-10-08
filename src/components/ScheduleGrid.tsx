@@ -1,5 +1,5 @@
 /**
- * ScheduleGrid — the weekly class schedule. Columns are Mon–Fri (day 1..5);
+ * ScheduleGrid — the weekly class schedule. Columns are Mon–Sat (day 1..6);
  * rows are the distinct time blocks derived from schedule_slots start/end.
  * Each occupied slot renders a ScheduleCell (a real <button>). Glow is DERIVED
  * from the live tasks array via subjectHasPending — never stored.
@@ -18,6 +18,7 @@ const DAYS: { day: number; label: string }[] = [
   { day: 3, label: 'Wed' },
   { day: 4, label: 'Thu' },
   { day: 5, label: 'Fri' },
+  { day: 6, label: 'Sat' },
 ];
 
 interface ScheduleGridProps {
