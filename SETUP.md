@@ -135,17 +135,123 @@ dropping or renaming `current_role_of` independently would silently break
 ordinary theme persistence and self name edits, not just role freezing. Keep it
 in place alongside the policies.
 
-## 7. RLS / role-escalation proof (manual verification)
+## 7. RLS / role-escalation proof
 
-> Filled in by FEAT-002 with concrete `curl`/API calls. Placeholder for now.
+RLS is the real authorization boundary — the UI only hides controls as a
+convenience. The cases below prove it. They run **automatically** as an
+integration suite when the test env is set (see "Automated run"); otherwise run
+them **manually** with the snippets here.
 
-The checks to run against a live project (RLS is the real boundary):
+### What is verified
 
-- Anonymous `SELECT` works on all four tables.
-- Anonymous and member `INSERT`/`UPDATE`/`DELETE` on `tasks` is **rejected**.
-- A member's `update({ name, role: 'officer' })` is **rejected**; `update({ name })`
-  and `update({ theme_preferences })` **succeed** (Policy A / `current_role_of`).
-- An Officer's promote/demote of another user **succeeds** (Policy B).
+| Case | Expected |
+| --- | --- |
+| Anonymous `SELECT` on `profiles`/`subjects`/`schedule_slots`/`tasks` | **allowed** |
+| Anonymous `INSERT`/`UPDATE`/`DELETE` on `tasks` | **rejected** |
+| Member `INSERT`/`UPDATE`/`DELETE` on `tasks` | **rejected** (`WITH CHECK is_officer()`) |
+| Member `update({ name })` on own row | **allowed** (Policy A) |
+| Member `update({ theme_preferences })` on own row | **allowed** (Policy A) |
+| Member `update({ role: 'officer' })` on own row, **no other column** | **rejected** (pure self-escalation) |
+| Member `update({ name, role: 'officer' })` on own row | **rejected** |
+| Officer `update({ role })` on **another** user | **allowed** (Policy B) |
+| Officer `update({ theme_preferences })` on **another** user | **rejected** (only the row owner, via Policy A, may write theme) |
+
+The pure-escalation case (role-only, no other column changed) is the critical
+negative: it fails `profiles_update_self`'s `WITH CHECK (role = current_role_of(auth.uid()))`
+and, for a member, `profiles_update_officer`'s `WITH CHECK (is_officer())` too, so
+it is rejected under the OR-composition of the two policies.
+
+### Automated run
+
+The suite is `src/__tests__/rls.integration.test.ts`. It is **skipped with a
+printed reason** unless all of these env vars are set when you run `npm run test`:
+
+```
+RLS_TEST_SUPABASE_URL=https://<ref>.supabase.co
+RLS_TEST_ANON_KEY=<anon-public-key>
+RLS_TEST_MEMBER_EMAIL=<a seeded account whose role is 'member'>
+RLS_TEST_MEMBER_PASSWORD=<...>
+RLS_TEST_OFFICER_EMAIL=<a seeded account whose role is 'officer'>
+RLS_TEST_OFFICER_PASSWORD=<...>
+RLS_TEST_TARGET_PROFILE_ID=<a third profile id the officer may promote/demote
+                            and whose theme the officer must not overwrite>
+```
+
+Create the two accounts via the app, promote one with the officer-bootstrap SQL
+(section 4), and pass a third profile id as the target. The suite restores any
+row it changes.
+
+### Manual run (curl)
+
+Set shell vars first (`anon` key, a member access token, an officer access
+token — grab the user JWTs from `supabase.auth.getSession()` in the app console
+after signing in, or from a `signInWithPassword` REST call):
+
+```bash
+BASE=https://<ref>.supabase.co/rest/v1
+ANON=<anon-public-key>
+MEMBER_JWT=<member access token>
+OFFICER_JWT=<officer access token>
+MEMBER_ID=<member profile id>
+TARGET_ID=<another profile id>
+```
+
+Anonymous read (expect `200` + rows):
+
+```bash
+curl -s "$BASE/subjects?select=*" -H "apikey: $ANON"
+```
+
+Anonymous task insert (expect `401`/`403` — denied):
+
+```bash
+curl -s -X POST "$BASE/tasks" -H "apikey: $ANON" \
+  -H "Content-Type: application/json" \
+  -d '{"subject_id":"'$TARGET_ID'","title":"forged"}'
+```
+
+Member task insert (expect denied — `WITH CHECK is_officer()`):
+
+```bash
+curl -s -X POST "$BASE/tasks" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"subject_id":"'$TARGET_ID'","title":"forged"}'
+```
+
+Member self name / theme update (expect `2xx` — allowed):
+
+```bash
+curl -s -X PATCH "$BASE/profiles?id=eq.$MEMBER_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"name":"New Name"}'
+curl -s -X PATCH "$BASE/profiles?id=eq.$MEMBER_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"theme_preferences":{"mode":"dark","accent":"#3366FF"}}'
+```
+
+Member pure role self-escalation, no other column (expect denied):
+
+```bash
+curl -s -X PATCH "$BASE/profiles?id=eq.$MEMBER_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"role":"officer"}'
+```
+
+Officer promote/demote of another user (expect `2xx` — allowed, Policy B):
+
+```bash
+curl -s -X PATCH "$BASE/profiles?id=eq.$TARGET_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
+  -d '{"role":"officer"}'
+```
+
+Officer cross-user theme write (expect denied — only the owner may write theme):
+
+```bash
+curl -s -X PATCH "$BASE/profiles?id=eq.$TARGET_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
+  -d '{"theme_preferences":{"mode":"light","accent":"#FFFFFF"}}'
+```
 
 ## Local development
 
