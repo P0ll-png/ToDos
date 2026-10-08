@@ -10,11 +10,13 @@ import { supabase } from '../lib/supabase';
 import { useSession } from '../context/SessionProvider';
 import { AuthDialog } from './AuthDialog';
 import { AdminPanel } from './AdminPanel';
+import { AppearancePanel } from './AppearancePanel';
 
 export function Header() {
   const { session, profile, isOfficer } = useSession();
   const [showAuth, setShowAuth] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showAppearance, setShowAppearance] = useState(false);
 
   async function handleSignOut() {
     if (!supabase) return;
@@ -52,6 +54,16 @@ export function Header() {
       </div>
 
       <nav style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={() => setShowAppearance(true)}
+          aria-label="Appearance settings"
+          title="Appearance"
+          style={iconButtonStyle}
+        >
+          <PaletteIcon />
+        </button>
+
         {isOfficer && (
           <button
             type="button"
@@ -96,7 +108,36 @@ export function Header() {
           <AdminPanel onClose={() => setShowAdmin(false)} />
         </Overlay>
       )}
+      {showAppearance && (
+        <Overlay onClose={() => setShowAppearance(false)}>
+          <AppearancePanel onClose={() => setShowAppearance(false)} />
+        </Overlay>
+      )}
     </header>
+  );
+}
+
+/** Palette/gear icon for the Appearance entry. Decorative (aria-hidden). */
+function PaletteIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z" />
+    </svg>
   );
 }
 
@@ -144,4 +185,17 @@ const secondaryButtonStyle: React.CSSProperties = {
   border: '1px solid var(--border)',
   borderRadius: 'calc(var(--radius) - 4px)',
   fontWeight: 500,
+};
+
+const iconButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '2rem',
+  height: '2rem',
+  padding: 0,
+  background: 'var(--surface)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'calc(var(--radius) - 4px)',
 };
