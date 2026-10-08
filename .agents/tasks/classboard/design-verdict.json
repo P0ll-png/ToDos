@@ -1,0 +1,62 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "title": "current_role_of() role-freeze mechanism is internally inconsistent and the security conclusion is asserted rather than test-proven",
+      "where": "Why current_role_of() instead of an inline same-table subquery; Profiles UPDATE Policy Composition; Testability",
+      "problem": "The core anti-self-escalation claim rests on WITH CHECK (role = current_role_of(auth.uid())) returning the OLD role. The conclusion is correct for Postgres, but the design's justification conflates three mechanisms (READ COMMITTED isolation, the SECURITY DEFINER independent re-read, and the STABLE planner hint) and disclaims two of them, so a maintainer cannot tell which one is load-bearing. If a future refactor to a correlated subquery or a different isolation level ever let the re-read observe the in-flight tuple, a member could self-promote. The specified RLS test uses update({name, role:'officer'}) and lacks the pure role-only escalation case.",
+      "fix": "Pin the single mechanism in prose: current_role_of() runs an independent SELECT ... WHERE id = auth.uid() that under READ COMMITTED does not see the uncommitted enclosing UPDATE, so it returns the committed old role; state that STABLE is only a planner hint and is not relied on for correctness. Promote the RLS integration test to a required gate and add a negative case: a member issuing update({ role: 'officer' }).eq('id', self) with no other column change must be rejected."
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "title": "profiles INSERT under enabled RLS with no INSERT policy relies on unstated SECURITY DEFINER owner RLS-bypass",
+      "where": "DDL handle_new_user trigger; table-level privileges; profiles policies; Security Notes",
+      "problem": "RLS is enabled on profiles with only SELECT and UPDATE policies and no insert grant. New rows are created solely by the SECURITY DEFINER handle_new_user trigger. The design never states why that insert succeeds. It works because the trigger runs as the table owner, which bypasses RLS by default; but adding FORCE ROW LEVEL SECURITY (a plausible hardening instinct) would then break every signup because no INSERT policy admits the row.",
+      "fix": "Document in Security Notes / a DDL comment: profiles has no INSERT policy by design; rows are created only by the SECURITY DEFINER handle_new_user trigger running as table owner, which bypasses RLS. Warn: do not add FORCE ROW LEVEL SECURITY to profiles without also adding an INSERT policy or signup breaks. Optionally add an explicit restrictive INSERT policy instead of relying on owner-bypass."
+    },
+    {
+      "id": 3,
+      "severity": "MEDIUM",
+      "title": "profiles_update_officer (Policy B) lets an officer write any profile's theme_preferences, contradicting the DB-enforced per-user theme invariant",
+      "where": "profiles policies (Policy B); Theme Persistence ('never anyone else's'); Invariants; acceptance criterion (4)",
+      "problem": "Policy B is for update using (is_officer()) with check (is_officer()) with no column or id scoping, granting an officer UPDATE on every column of every profile including other users' theme_preferences. The design states as a server-side invariant that theme changes never touch anyone else's row and that the DB, not the UI, is the boundary. Under that threat model an officer can overwrite any member's stored theme via a direct API call, so the stated invariant is not actually DB-enforced.",
+      "fix": "Pick one: (a) downgrade the invariant to 'the client only writes the current user's theme; officers can technically overwrite any profile via Policy B, accepted because officers are trusted' and say so explicitly; or (b) column-scope the officer write (grant update (role) on profiles, revoke the broad update grant) so theme_preferences is writable only by the row owner via Policy A. Option (b) better matches the design's 'DB is the boundary' stance."
+    },
+    {
+      "id": 4,
+      "severity": "MEDIUM",
+      "title": "Realtime poll-fallback trigger is underspecified; 'no events within N seconds' cannot distinguish a broken anon channel from an idle board",
+      "where": "Anon Realtime delivery is a verified prerequisite, with a fallback; Error Handling (Realtime subscribe)",
+      "problem": "The fallback is triggered by a REALTIME_FALLBACK flag OR a runtime check that detects no events within N seconds of subscribing. A runtime idle timer cannot tell a broken anon-Realtime channel (joins successfully but row events are silently unauthorized for anon) from a normal idle board with no data changes. So it either never trips (subscribe succeeded) or trips constantly when idle, and the actual anon failure mode is the one it misses.",
+      "fix": "Specify a deterministic trigger: rely on the SETUP.md anon-Realtime verification to set VITE_REALTIME_FALLBACK, or detect the channel entering an errored/CLOSED/TIMED_OUT state (observable) rather than inferring from event silence. State that 'no events for N seconds' alone is not a valid trigger. Add an always-on refetch on window focus/visibilitychange so a missed event self-heals regardless of transport."
+    },
+    {
+      "id": 5,
+      "severity": "NIT",
+      "title": "adjustForAA 'stricter of --bg and --surface' rule is loose and left optional, risking two different link colors",
+      "where": "Auto-adjust algorithm step 2",
+      "problem": "The algorithm fixes the target as --surface, then says where links also sit on --bg implementers pass --bg and take the stricter of the two 'but the default and tested target is --surface'. This hand-described branch is not pinned to a single --accent-text value and could yield inconsistent link colors.",
+      "fix": "Compute --accent-text once by running adjustForAA against both --bg and --surface and keeping the result that satisfies AA against both (fall back to --text if neither can). Make that single value the token and unit-test it; drop the optional '--bg' phrasing."
+    },
+    {
+      "id": 6,
+      "severity": "NIT",
+      "title": "--accent-weak glow halo (~22% alpha) is not contrast-validated; dependence on it should be stated as cosmetic",
+      "where": "Token set (--accent-weak); Pending/glow indicator is not color-alone",
+      "problem": "The glow halo uses an eyeballed ~22% alpha accent that is never contrast-checked against tinted bg/surface. This is a NIT because the --dot-ring (= --text) dot, not the halo, carries the non-color accessibility cue, but the design does not say so, leaving the halo's visibility an open question.",
+      "fix": "State explicitly that halo visibility is cosmetic, not an accessibility property (the ringed dot carries the non-color cue), so no contrast check is required on --accent-weak."
+    },
+    {
+      "id": 7,
+      "severity": "NIT",
+      "title": "ConfigError and error boundary hardcode the dark palette; a light-mode user sees a dark error screen",
+      "where": "Supabase Client & Graceful Degradation (ConfigError uses default dark palette); Error Handling (top-level error boundary)",
+      "problem": "The pre-paint bootstrap in index.html already applies the user's persisted (possibly light) tokens to :root even on the config-error path, but ConfigError and the error boundary are specified to use the default dark palette, giving a returning light-mode user a jarring dark card.",
+      "fix": "Have ConfigError and the error boundary consume the live CSS tokens already applied by the bootstrap (var(--bg)/var(--surface)/var(--text)), which fall back to dark automatically only if the bootstrap failed."
+    }
+  ],
+  "reviewDoc": "c:\\Users\\paulc\\Projects\\ToDoS\\.agents\\tasks\\classboard\\design-review.md"
+}

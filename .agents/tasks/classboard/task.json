@@ -1,0 +1,7 @@
+{
+  "task_id": "task-classboard",
+  "task_description": "Build 'Class To-Do Board': a React 18 + TypeScript + Vite single-class shared schedule + to-do tracker backed by Supabase (Postgres + Auth + Realtime). Public anonymous read of schedule/subjects/details/tasks; officer-only writes enforced by RLS; email/password + Google OAuth; officer promote/demote admin; weekly schedule grid with derived amber glow + ringed-dot pending cue; details panel; nearest-deadline-first task list with overdue flags; per-user CSS-token theming (light/dark/system, accent + tints, real WCAG contrast math, no-flash pre-paint bootstrap). Implements all 4 MEDIUM + 3 NIT design-review findings as hard requirements. Do NOT seed data. All work in the worktree on branch classboard; commit locally, never push.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

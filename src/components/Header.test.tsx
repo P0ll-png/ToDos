@@ -59,16 +59,4 @@ describe('Header officer-only controls', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
-
-  it('always shows the "Officers can edit" tag', () => {
-    useSessionMock.mockReturnValue({
-      session: null,
-      profile: null,
-      role: null,
-      isOfficer: false,
-      refreshProfile: vi.fn(),
-    });
-    render(<Header />);
-    expect(screen.getByText('Officers can edit')).toBeInTheDocument();
-  });
 });

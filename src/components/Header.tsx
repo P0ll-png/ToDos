@@ -1,6 +1,6 @@
 /**
- * Header — app title, the "Officers can edit" tag, and the auth/admin entry
- * points. The Members (admin) button renders only for officers; that is UI
+ * Header — app title and the auth/admin entry points. The Members (admin)
+ * button renders only for officers; that is UI
  * convenience, not a security boundary (AdminPanel/setRole trust RLS). Sign in
  * is optional — anonymous visitors get the full read-only app. All entry points
  * are real <button>s with the global focus ring.
@@ -40,18 +40,7 @@ export function Header() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <h1 style={{ fontSize: '1.125rem', margin: 0 }}>Class To-Do Board</h1>
-        <span
-          style={{
-            fontSize: '0.75rem',
-            padding: '0.125rem 0.5rem',
-            borderRadius: '999px',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-          }}
-        >
-          Officers can edit
-        </span>
+        <h1 style={{ fontSize: '1.125rem', margin: 0 }}>II-CCSAD || Class To-Do Board</h1>
       </div>
 
       <nav style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
