@@ -6,10 +6,6 @@ dist/
 dist-ssr/
 build/
 
-# Environment variables (keep .env.example tracked)
-.env
-.env.local
-.env.*.local
 
 # Logs
 *.log

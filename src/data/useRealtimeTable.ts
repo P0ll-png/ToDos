@@ -127,21 +127,30 @@ export function useRealtimeTable<Row extends Identified, T extends Identified>(
       });
     };
 
+    // Unique topic per mount: a quick unmount/remount (React StrictMode in dev,
+    // or any remount) must not collide with a still-closing channel of the same
+    // name, which can trigger a reconnect storm.
+    const topic = `rt:${table}:${Math.random().toString(36).slice(2)}`;
     const channel: RealtimeChannel = client
-      .channel(`public:${table}`)
+      .channel(topic)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table },
         reconcile,
       )
       .subscribe((channelStatus) => {
-        // Observable-state fallback (fix #4): a channel error / close / timeout
-        // means Realtime is not delivering, so switch to the poll. This is NOT
-        // an idle timer — we react only to the transport's own reported state.
+        // Observable-state fallback (fix #4): a channel ERROR or TIMEOUT means
+        // Realtime is not delivering, so switch to the poll. This is NOT an idle
+        // timer — we react only to the transport's own reported state.
+        //
+        // NOTE: 'CLOSED' is deliberately NOT treated as a failure. Supabase emits
+        // CLOSED during normal teardown and transient reconnects; treating it as
+        // "broken" started a false poll on every routine reconnect and, combined
+        // with reconnect churn after a write, produced a re-render storm. We only
+        // react to genuine error states.
         if (
           channelStatus === 'CHANNEL_ERROR' ||
-          channelStatus === 'TIMED_OUT' ||
-          channelStatus === 'CLOSED'
+          channelStatus === 'TIMED_OUT'
         ) {
           startPolling();
         }

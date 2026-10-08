@@ -56,43 +56,75 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   // Track the latest user id so an in-flight fetch for a stale user is ignored.
   const currentUserId = useRef<string | null>(null);
+  // Guard against concurrent/duplicate fetches for the SAME user. On first load
+  // getSession() and the first onAuthStateChange both fire while currentUserId
+  // is still null, so both would pass the id-change guard and launch a fetch;
+  // the two racing fetches could interleave and briefly set the member fallback
+  // over a real officer profile, flickering officer-only controls. We let only
+  // one fetch per user id be in flight.
+  const fetchingFor = useRef<string | null>(null);
 
-  const fetchProfile = useCallback(async (userId: string): Promise<void> => {
-    if (!supabase) return;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, name, email, role, theme_preferences')
-        .eq('id', userId)
-        .maybeSingle();
-      // The user changed (sign-out or switch) while we awaited — drop result.
-      if (currentUserId.current !== userId) return;
-      if (error) break;
-      if (data) {
-        setProfile(rowToProfile(data as ProfileRow));
-        return;
+  const fetchProfile = useCallback(
+    async (userId: string, email: string): Promise<void> => {
+      if (!supabase) return;
+      // Collapse duplicate in-flight fetches for the same user.
+      if (fetchingFor.current === userId) return;
+      fetchingFor.current = userId;
+      try {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('id, name, email, role, theme_preferences')
+            .eq('id', userId)
+            .maybeSingle();
+          // The user changed (sign-out or switch) while we awaited — drop result.
+          if (currentUserId.current !== userId) return;
+          if (error) break;
+          if (data) {
+            setProfile(rowToProfile(data as ProfileRow));
+            return;
+          }
+          // No row yet: likely handle_new_user() trigger lag on fresh signup.
+          if (attempt === 0) await delay(PROFILE_RETRY_DELAY_MS);
+        }
+        // Row still missing after retry. Only fall back to a member default for
+        // a genuinely new profile — NEVER overwrite a profile we already loaded
+        // for this same user, or a transient empty read would demote the UI
+        // (flickering officer-only controls off and on).
+        if (currentUserId.current !== userId) return;
+        setProfile((prev) => {
+          if (prev && prev.id === userId) return prev;
+          return {
+            id: userId,
+            name: '',
+            email,
+            role: 'member',
+            themePreferences: normalizePrefs(null),
+          };
+        });
+      } finally {
+        if (fetchingFor.current === userId) fetchingFor.current = null;
       }
-      // No row yet: likely handle_new_user() trigger lag on fresh signup.
-      if (attempt === 0) await delay(PROFILE_RETRY_DELAY_MS);
-    }
-    // Row still missing after retry: default to member so the app stays usable.
-    if (currentUserId.current !== userId) return;
-    setProfile({
-      id: userId,
-      name: '',
-      email: session?.user.email ?? '',
-      role: 'member',
-      themePreferences: normalizePrefs(null),
-    });
-  }, [session]);
+    },
+    [],
+  );
 
   const applySession = useCallback(
     (next: Session | null) => {
-      setSession(next);
       const userId = next?.user.id ?? null;
+      // Ignore auth events that don't change the user (token refresh, tab
+      // re-focus re-emitting SIGNED_IN): re-fetching would churn the profile
+      // object and re-render the whole tree. Only act on an actual id change.
+      if (userId === currentUserId.current) {
+        // Keep the session object fresh (new access token) without re-fetching
+        // the profile; this does not change identity-derived state.
+        setSession(next);
+        return;
+      }
       currentUserId.current = userId;
+      setSession(next);
       if (userId) {
-        void fetchProfile(userId);
+        void fetchProfile(userId, next?.user.email ?? '');
       } else {
         setProfile(null);
       }
@@ -102,8 +134,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     const userId = currentUserId.current;
-    if (userId) await fetchProfile(userId);
-  }, [fetchProfile]);
+    // Force a fresh read even if a fetch just ran (explicit user action, e.g.
+    // after being promoted): clear the in-flight guard first.
+    fetchingFor.current = null;
+    if (userId) await fetchProfile(userId, session?.user.email ?? '');
+  }, [fetchProfile, session]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -121,9 +156,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       active = false;
       sub.subscription.unsubscribe();
     };
-    // applySession is stable via useCallback; re-subscribing on identity change
-    // is intentional and safe (the cleanup unsubscribes first).
-  }, [applySession]);
+    // Mount once: applySession reads/writes the currentUserId ref, so its
+    // identity changing must NOT re-subscribe. Deliberately empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
