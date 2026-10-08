@@ -1,0 +1,54 @@
+/*
+ * tokens.css — base-palette design tokens selected by data-mode on <html>.
+ *
+ * These declarations are the static fallback that matches the theme-core base
+ * maps. At runtime the pre-paint bootstrap (and later ThemeProvider) OVERWRITE
+ * these custom properties inline on <html> with the user's resolved tokens
+ * (accent overlay, tints, derived --accent-text/--accent-contrast/etc.). The
+ * values here keep the page styled before/without JS and must stay in sync with
+ * DARK_BASE / LIGHT_BASE in src/lib/theme-core.ts.
+ *
+ * Components consume ONLY these tokens — never a hardcoded color.
+ */
+
+:root,
+html[data-mode='dark'] {
+  --bg: #0e1726;
+  --surface: #15223a;
+  --surface-2: #1b2a46;
+  --border: #24344f;
+  --text: #e8edf5;
+  --muted: #9aa8bf;
+  --accent: #ffb547;
+  --accent-contrast: #000000;
+  --accent-text: #ffb547;
+  --accent-weak: rgba(255, 181, 71, 0.22);
+  --focus-ring: #ffb547;
+  --danger: #f0666b;
+  --danger-contrast: #1a0a0b;
+  --dot-ring: #e8edf5;
+  --radius: 12px;
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+html[data-mode='light'] {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef1f7;
+  --border: #d5dce8;
+  --text: #141c2b;
+  --muted: #5b6881;
+  --accent: #ffb547;
+  --accent-contrast: #000000;
+  /* default amber is unreadable as text on white, so the AA guard darkens it */
+  --accent-text: #a36100;
+  --accent-weak: rgba(255, 181, 71, 0.22);
+  --focus-ring: #a36100;
+  --danger: #c62f36;
+  --danger-contrast: #ffffff;
+  --dot-ring: #141c2b;
+  --radius: 12px;
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+}
