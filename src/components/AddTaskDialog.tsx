@@ -14,6 +14,7 @@ import type { Subject } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
 import { localTodayISO } from '../lib/derive';
 import { MUTATION_MESSAGES, addTask } from '../data/mutations';
+import { DateSelect } from './DateSelect';
 
 const TITLE_MAX = 200;
 const NOTES_MAX = 2000;
@@ -36,9 +37,14 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
   const trimmedTitle = title.trim();
   const titleValid = trimmedTitle.length >= 1 && trimmedTitle.length <= TITLE_MAX;
   const notesValid = notes.length <= NOTES_MAX;
-  const canSubmit = Boolean(subjectId) && titleValid && notesValid && !busy;
+  // Date given is required and must be fully selected (DateSelect yields '' if
+  // any of day/month/year is cleared). Deadline stays optional.
+  const givenDateValid = givenDate !== '';
+  const canSubmit =
+    Boolean(subjectId) && titleValid && notesValid && givenDateValid && !busy;
   // Deadline before given date is allowed, but warned (back-dating is legit).
-  const deadlineWarn = deadline !== '' && deadline < givenDate;
+  const deadlineWarn =
+    deadline !== '' && givenDate !== '' && deadline < givenDate;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -131,26 +137,24 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
             />
           </label>
 
-          <label style={fieldStyle}>
+          <div style={fieldStyle}>
             <span style={labelStyle}>Date given</span>
-            <input
-              type="date"
+            <DateSelect
+              label="Date given"
               value={givenDate}
-              required
-              onChange={(e) => setGivenDate(e.target.value)}
-              style={inputStyle}
+              onChange={setGivenDate}
             />
-          </label>
+          </div>
 
-          <label style={fieldStyle}>
+          <div style={fieldStyle}>
             <span style={labelStyle}>Deadline (optional)</span>
-            <input
-              type="date"
+            <DateSelect
+              label="Deadline"
               value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              style={inputStyle}
+              onChange={setDeadline}
+              optional
             />
-          </label>
+          </div>
 
           {deadlineWarn && (
             <p role="status" style={{ color: 'var(--muted)', margin: '0 0 0.75rem' }}>
