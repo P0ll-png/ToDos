@@ -21,6 +21,7 @@ import {
 } from '../data/mutations';
 import { AddTaskDialog } from './AddTaskDialog';
 import { TaskRow } from './TaskRow';
+import { Modal } from './Modal';
 
 interface TaskListProps {
   subjects: Subject[];
@@ -106,29 +107,13 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
       )}
 
       {showAdd && (
-        <div
-          style={overlayStyle}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowAdd(false);
-          }}
-        >
+        <Modal onClose={() => setShowAdd(false)}>
           <AddTaskDialog subjects={subjects} onClose={() => setShowAdd(false)} />
-        </div>
+        </Modal>
       )}
     </section>
   );
 }
-
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '1rem',
-  background: 'rgba(0, 0, 0, 0.5)',
-  zIndex: 50,
-};
 
 const sectionStyle: React.CSSProperties = {
   padding: '1rem',

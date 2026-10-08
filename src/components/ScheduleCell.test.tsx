@@ -61,4 +61,49 @@ describe('ScheduleCell', () => {
     screen.getByRole('button', { name: /Mathematics/ }).click();
     expect(onSelect).toHaveBeenCalledWith('math');
   });
+
+  it('reflects selection via aria-pressed', () => {
+    const { rerender } = render(
+      <ScheduleCell
+        subject={subject}
+        pending={false}
+        selected={false}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Mathematics/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    rerender(
+      <ScheduleCell
+        subject={subject}
+        pending={false}
+        selected
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Mathematics/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('carries the non-color pending cue: an aria-hidden dot plus sr-only text', () => {
+    render(
+      <ScheduleCell
+        subject={subject}
+        pending
+        selected={false}
+        onSelect={() => {}}
+      />,
+    );
+    // The dot is decorative — it must not be announced on its own.
+    expect(screen.getByTestId('pending-dot')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+    // A text alternative conveys "pending" without relying on color.
+    expect(screen.getByText(/has pending tasks/i)).toBeInTheDocument();
+  });
 });

@@ -37,7 +37,9 @@ const FONT_SANS =
  * Base palette per mode. The user's accent is overlaid on top of either of
  * these; switching mode keeps the accent and only swaps the base.
  * --danger / --danger-contrast are fixed per mode and NOT user-themable so
- * overdue flags always stay legible.
+ * overdue flags always stay legible. --scrim (the modal backdrop) is likewise a
+ * fixed per-mode value — a semi-transparent dim, not a token any component
+ * hardcodes — so overlays never embed a raw color.
  */
 export interface BasePalette {
   bg: string;
@@ -47,6 +49,7 @@ export interface BasePalette {
   muted: string;
   danger: string;
   dangerContrast: string;
+  scrim: string;
 }
 
 export const DARK_BASE: BasePalette = {
@@ -57,6 +60,7 @@ export const DARK_BASE: BasePalette = {
   muted: '#9AA8BF',
   danger: '#F0666B',
   dangerContrast: '#1A0A0B',
+  scrim: 'rgba(5, 10, 20, 0.6)',
 };
 
 export const LIGHT_BASE: BasePalette = {
@@ -67,6 +71,7 @@ export const LIGHT_BASE: BasePalette = {
   muted: '#5B6881',
   danger: '#C62F36',
   dangerContrast: '#FFFFFF',
+  scrim: 'rgba(15, 23, 42, 0.45)',
 };
 
 export function basePalette(mode: ResolvedMode): BasePalette {
@@ -334,6 +339,7 @@ export function resolveTokens(prefs: ThemePrefs, resolvedMode: ResolvedMode): To
     '--danger': base.danger,
     '--danger-contrast': base.dangerContrast,
     '--dot-ring': base.text,
+    '--scrim': base.scrim,
     '--radius': RADIUS,
     '--font-sans': FONT_SANS,
   };

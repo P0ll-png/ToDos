@@ -7,8 +7,10 @@
  * the selected subject disappears from the live subjects array (an officer
  * deleted it via Realtime), selection is cleared.
  *
- * Responsive/mobile stacking and the full a11y pass are finalized in FEAT-005;
- * this is the buildable desktop layout.
+ * Layout classes live in base.css: .board-main is the desktop 70%/30% grid
+ * which collapses to a single column at <=860px, stacking schedule -> details
+ * -> list (the natural DOM order). The ScheduleGrid scrolls horizontally on its
+ * own so the page never overflows on mobile.
  */
 import { useEffect, useState } from 'react';
 import { useSubjects } from '../data/useSubjects';
@@ -63,8 +65,8 @@ export function Layout() {
         </div>
       )}
 
-      <main style={mainStyle}>
-        <div style={leftColumnStyle}>
+      <main className="board-main">
+        <div className="board-left">
           <ScheduleGrid
             subjects={subjects}
             slots={slotsState.data}
@@ -78,32 +80,13 @@ export function Layout() {
             selectedSubjectId={selectedSubjectId}
           />
         </div>
-        <div style={rightColumnStyle}>
+        <div className="board-right">
           <TaskList subjects={subjects} tasks={tasksState.data} />
         </div>
       </main>
     </div>
   );
 }
-
-const mainStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '70% 30%',
-  gap: '1rem',
-  padding: '1rem',
-  alignItems: 'start',
-};
-
-const leftColumnStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '1rem',
-  minWidth: 0,
-};
-
-const rightColumnStyle: React.CSSProperties = {
-  minWidth: 0,
-};
 
 const errorBarStyle: React.CSSProperties = {
   display: 'flex',

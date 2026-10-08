@@ -36,5 +36,14 @@ OAuth, promoting the first Officer, Realtime verification, and RLS proofs.
 - Pure domain logic (theme/contrast math, task sorting, glow derivation) lives in
   `src/lib/` with no React/Supabase dependencies, so it is directly unit-tested.
 - Theming uses CSS custom properties (design tokens). Components consume only
-  tokens — never hardcoded colors. A build-time pre-paint bootstrap applies the
-  user's theme before first paint to avoid a flash of the wrong theme.
+  tokens — never hardcoded colors (the modal backdrop uses a `--scrim` token).
+  A build-time pre-paint bootstrap applies the user's theme before first paint
+  to avoid a flash of the wrong theme.
+- Layout is responsive: a 70% / 30% desktop grid that collapses to a single
+  column at <= 860px, stacking schedule -> details -> list. The schedule grid
+  scrolls horizontally on narrow screens.
+- Accessibility: every interactive element is a real `<button>`/input with a
+  visible `:focus-visible` ring (`--focus-ring`). Dialogs share a `Modal`
+  component that provides `role="dialog"` + `aria-modal`, a focus trap,
+  Escape-to-close, and focus restoration to the opener. The schedule's "pending"
+  state is conveyed by a ringed dot plus screen-reader text, not color alone.

@@ -11,6 +11,7 @@ import { useSession } from '../context/SessionProvider';
 import { AuthDialog } from './AuthDialog';
 import { AdminPanel } from './AdminPanel';
 import { AppearancePanel } from './AppearancePanel';
+import { Modal } from './Modal';
 
 export function Header() {
   const { session, profile, isOfficer } = useSession();
@@ -99,19 +100,19 @@ export function Header() {
       </nav>
 
       {showAuth && (
-        <Overlay onClose={() => setShowAuth(false)}>
+        <Modal onClose={() => setShowAuth(false)}>
           <AuthDialog onClose={() => setShowAuth(false)} />
-        </Overlay>
+        </Modal>
       )}
       {showAdmin && (
-        <Overlay onClose={() => setShowAdmin(false)}>
+        <Modal onClose={() => setShowAdmin(false)}>
           <AdminPanel onClose={() => setShowAdmin(false)} />
-        </Overlay>
+        </Modal>
       )}
       {showAppearance && (
-        <Overlay onClose={() => setShowAppearance(false)}>
+        <Modal onClose={() => setShowAppearance(false)}>
           <AppearancePanel onClose={() => setShowAppearance(false)} />
-        </Overlay>
+        </Modal>
       )}
     </header>
   );
@@ -138,34 +139,6 @@ function PaletteIcon() {
       <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
       <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z" />
     </svg>
-  );
-}
-
-function Overlay({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-        background: 'rgba(0, 0, 0, 0.5)',
-        zIndex: 50,
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      {children}
-    </div>
   );
 }
 
