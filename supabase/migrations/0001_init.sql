@@ -40,7 +40,7 @@ create table public.tasks (
   title      text not null,
   notes      text not null default '',
   given_date date not null default current_date,
-  deadline   date,                                           -- nullable
+  deadline   timestamptz,                                    -- nullable; date+time of submission
   created_by uuid references public.profiles(id) on delete set null,
   status     public.task_status not null default 'pending',
   created_at timestamptz default now()

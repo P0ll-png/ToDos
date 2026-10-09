@@ -6,12 +6,11 @@
  * forged writes regardless (RLS is_officer()).
  */
 import type { Subject, Task } from '../lib/types';
-import { isOverdue } from '../lib/derive';
+import { isOverdue, formatDeadline } from '../lib/derive';
 
 interface TaskRowProps {
   task: Task;
   subject: Subject | undefined;
-  today: string;
   isOfficer: boolean;
   busy: boolean;
   onToggleStatus: (task: Task) => void;
@@ -21,13 +20,12 @@ interface TaskRowProps {
 export function TaskRow({
   task,
   subject,
-  today,
   isOfficer,
   busy,
   onToggleStatus,
   onRemove,
 }: TaskRowProps) {
-  const overdue = isOverdue(task, today);
+  const overdue = isOverdue(task);
   const subjectName = subject?.name ?? 'Unknown subject';
   const done = task.status === 'done';
 
@@ -55,7 +53,7 @@ export function TaskRow({
           style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--muted)' }}
         >
           Given {task.givenDate}
-          {task.deadline ? ` · Due ${task.deadline}` : ' · No deadline'}
+          {task.deadline ? ` · Due ${formatDeadline(task.deadline)}` : ' · No deadline'}
         </p>
       </div>
 

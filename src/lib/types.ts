@@ -1,10 +1,14 @@
 /**
  * types.ts — database row types and domain types.
  *
- * DATE CONTRACT: given_date and deadline are Postgres `date`, returned by
- * Supabase as 'YYYY-MM-DD' strings. They are typed `string | null` and MUST
- * NEVER be coerced through `new Date()` — all comparison is lexicographic on
- * the zero-padded strings (see derive.ts / sorting.ts).
+ * DATE CONTRACT:
+ *  - given_date is a Postgres `date`, returned as a 'YYYY-MM-DD' string. It is
+ *    date-only and compared lexicographically; never coerce it through `new
+ *    Date()`.
+ *  - deadline is a Postgres `timestamptz` (date + time of submission), returned
+ *    as an ISO 8601 string (e.g. '2026-10-08T14:30:00+00:00') or null. Sorting
+ *    still works lexicographically because all deadlines share the ISO format;
+ *    overdue compares the parsed instant against now() (see derive.ts).
  */
 
 import type { ThemePrefs } from './theme-core';
@@ -46,8 +50,8 @@ export interface TaskRow {
   subject_id: string;
   title: string;
   notes: string;
-  given_date: string;
-  deadline: string | null;
+  given_date: string; // 'YYYY-MM-DD'
+  deadline: string | null; // ISO timestamptz string, or null
   created_by: string | null;
   status: TaskStatus;
   created_at: string | null;

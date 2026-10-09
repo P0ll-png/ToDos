@@ -12,7 +12,6 @@
 import { useMemo, useState } from 'react';
 import type { Subject, Task } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
-import { localTodayISO } from '../lib/derive';
 import { sortByDeadline } from '../lib/sorting';
 import {
   MUTATION_MESSAGES,
@@ -41,7 +40,6 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
   }, [subjects]);
 
   const sorted = useMemo(() => sortByDeadline(tasks), [tasks]);
-  const today = localTodayISO();
 
   async function handleToggleStatus(task: Task) {
     if (busy) return;
@@ -96,7 +94,6 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
               key={task.id}
               task={task}
               subject={subjectById.get(task.subjectId)}
-              today={today}
               isOfficer={isOfficer}
               busy={busy}
               onToggleStatus={handleToggleStatus}

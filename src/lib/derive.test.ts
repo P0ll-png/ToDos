@@ -36,28 +36,44 @@ describe('subjectHasPending', () => {
 });
 
 describe('isOverdue', () => {
-  const today = '2025-06-15';
+  // Fixed "now" = 2025-06-15T12:00:00Z for deterministic comparison.
+  const now = Date.parse('2025-06-15T12:00:00Z');
 
-  it('is false for a same-day deadline', () => {
-    expect(isOverdue(task({ id: '1', deadline: '2025-06-15' }), today)).toBe(
-      false,
-    );
+  it('is false for a deadline later today (still ahead of now)', () => {
+    expect(
+      isOverdue(task({ id: '1', deadline: '2025-06-15T18:00:00Z' }), now),
+    ).toBe(false);
   });
 
-  it('is true for a one-day-past deadline when pending', () => {
-    expect(isOverdue(task({ id: '1', deadline: '2025-06-14' }), today)).toBe(
-      true,
-    );
+  it('is true for a deadline earlier today when pending', () => {
+    expect(
+      isOverdue(task({ id: '1', deadline: '2025-06-15T06:00:00Z' }), now),
+    ).toBe(true);
+  });
+
+  it('is true for a past-day deadline when pending', () => {
+    expect(
+      isOverdue(task({ id: '1', deadline: '2025-06-14T23:59:00Z' }), now),
+    ).toBe(true);
   });
 
   it('is false when the past-deadline task is done', () => {
     expect(
-      isOverdue(task({ id: '1', deadline: '2025-06-14', status: 'done' }), today),
+      isOverdue(
+        task({ id: '1', deadline: '2025-06-14T23:59:00Z', status: 'done' }),
+        now,
+      ),
     ).toBe(false);
   });
 
   it('is false when there is no deadline', () => {
-    expect(isOverdue(task({ id: '1', deadline: null }), today)).toBe(false);
+    expect(isOverdue(task({ id: '1', deadline: null }), now)).toBe(false);
+  });
+
+  it('is false for an unparseable deadline', () => {
+    expect(isOverdue(task({ id: '1', deadline: 'not-a-date' }), now)).toBe(
+      false,
+    );
   });
 });
 

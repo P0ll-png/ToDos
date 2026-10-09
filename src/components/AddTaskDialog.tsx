@@ -12,9 +12,9 @@
 import { useState, type FormEvent } from 'react';
 import type { Subject } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
-import { localTodayISO } from '../lib/derive';
+import { localTodayISO, toDeadlineISO } from '../lib/derive';
 import { MUTATION_MESSAGES, addTask } from '../data/mutations';
-import { DateSelect } from './DateSelect';
+import { CalendarField } from './CalendarField';
 
 const TITLE_MAX = 200;
 const NOTES_MAX = 2000;
@@ -30,21 +30,27 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [givenDate, setGivenDate] = useState(localTodayISO());
-  const [deadline, setDeadline] = useState('');
+  // Deadline is split into a date (calendar) and a time (input). A date with no
+  // time defaults to end-of-day (23:59) when combined. No date = no deadline.
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineTime, setDeadlineTime] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const trimmedTitle = title.trim();
   const titleValid = trimmedTitle.length >= 1 && trimmedTitle.length <= TITLE_MAX;
   const notesValid = notes.length <= NOTES_MAX;
-  // Date given is required and must be fully selected (DateSelect yields '' if
-  // any of day/month/year is cleared). Deadline stays optional.
+  // Date given is required and must be set (CalendarField yields '' if cleared).
   const givenDateValid = givenDate !== '';
   const canSubmit =
     Boolean(subjectId) && titleValid && notesValid && givenDateValid && !busy;
-  // Deadline before given date is allowed, but warned (back-dating is legit).
+  // The combined deadline instant (or null). Compared to the given date's start
+  // of day to decide the back-dating warning.
+  const deadlineISO = toDeadlineISO(deadlineDate, deadlineTime);
   const deadlineWarn =
-    deadline !== '' && givenDate !== '' && deadline < givenDate;
+    deadlineISO != null &&
+    givenDate !== '' &&
+    deadlineISO < new Date(`${givenDate}T00:00:00`).toISOString();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -56,7 +62,7 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
       title: trimmedTitle,
       notes,
       givenDate,
-      deadline: deadline === '' ? null : deadline,
+      deadline: deadlineISO,
       createdBy: profile?.id ?? null,
     });
     if (result.ok) {
@@ -139,7 +145,7 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
 
           <div style={fieldStyle}>
             <span style={labelStyle}>Date given</span>
-            <DateSelect
+            <CalendarField
               label="Date given"
               value={givenDate}
               onChange={setGivenDate}
@@ -148,12 +154,35 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
 
           <div style={fieldStyle}>
             <span style={labelStyle}>Deadline (optional)</span>
-            <DateSelect
-              label="Deadline"
-              value={deadline}
-              onChange={setDeadline}
-              optional
-            />
+            <div className="deadline-row">
+              <div className="deadline-date">
+                <CalendarField
+                  label="Deadline date"
+                  value={deadlineDate}
+                  onChange={setDeadlineDate}
+                  placeholder="No deadline"
+                />
+              </div>
+              <input
+                type="time"
+                aria-label="Deadline time of submission"
+                value={deadlineTime}
+                onChange={(e) => setDeadlineTime(e.target.value)}
+                disabled={deadlineDate === ''}
+                className="deadline-time"
+                style={inputStyle}
+              />
+            </div>
+            {deadlineDate !== '' && (
+              <p
+                className="muted"
+                style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--muted)' }}
+              >
+                {deadlineTime === ''
+                  ? 'No time set — defaults to end of day (11:59 PM).'
+                  : 'Due at the selected time.'}
+              </p>
+            )}
           </div>
 
           {deadlineWarn && (

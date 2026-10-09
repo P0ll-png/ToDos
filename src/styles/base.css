@@ -190,6 +190,58 @@ button {
   overflow-y: auto;
 }
 
+/*
+ * Calendar popover. Width is capped so it never exceeds the viewport, and it
+ * stays pinned to the left of its trigger but shifts left if it would overflow
+ * the right edge on a narrow screen.
+ */
+.calendar-popover {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  z-index: 60;
+  /* Never wider than the viewport (minus a small gutter). */
+  width: min(17rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--scrim);
+}
+
+/* On small screens, anchor the popover to the right edge of its trigger so a
+ * field in the right half of a row doesn't push it off-screen. */
+@media (max-width: 480px) {
+  .calendar-popover {
+    left: auto;
+    right: 0;
+  }
+}
+
+/* The deadline date + time row wraps when there isn't room side by side. */
+.deadline-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.deadline-row > .deadline-date {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.deadline-row > .deadline-time {
+  flex: 0 0 7rem;
+}
+
+@media (max-width: 360px) {
+  /* Extremely narrow: let the time input take the full width on its own line. */
+  .deadline-row > .deadline-time {
+    flex: 1 1 100%;
+  }
+}
+
 /* Visually hidden but available to assistive tech. */
 .sr-only {
   position: absolute;

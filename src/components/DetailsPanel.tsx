@@ -8,7 +8,7 @@
  */
 import { useMemo } from 'react';
 import type { Subject, Task } from '../lib/types';
-import { isOverdue, localTodayISO } from '../lib/derive';
+import { isOverdue, formatDeadline } from '../lib/derive';
 import { sortByDeadline } from '../lib/sorting';
 
 interface DetailsPanelProps {
@@ -33,8 +33,6 @@ export function DetailsPanel({
       tasks.filter((t) => t.subjectId === subject.id && t.status === 'pending'),
     );
   }, [subject, tasks]);
-
-  const today = localTodayISO();
 
   if (!subject) {
     return (
@@ -68,7 +66,7 @@ export function DetailsPanel({
       ) : (
         <ul style={listStyle}>
           {pending.map((task) => {
-            const overdue = isOverdue(task, today);
+            const overdue = isOverdue(task);
             return (
               <li
                 key={task.id}
@@ -89,7 +87,7 @@ export function DetailsPanel({
                   style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--muted)' }}
                 >
                   Given {task.givenDate}
-                  {task.deadline ? ` · Due ${task.deadline}` : ' · No deadline'}
+                  {task.deadline ? ` · Due ${formatDeadline(task.deadline)}` : ' · No deadline'}
                 </p>
               </li>
             );
