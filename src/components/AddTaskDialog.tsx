@@ -168,19 +168,20 @@ export function AddTaskDialog({ subjects, onClose }: AddTaskDialogProps) {
                 aria-label="Deadline time of submission"
                 value={deadlineTime}
                 onChange={(e) => setDeadlineTime(e.target.value)}
-                disabled={deadlineDate === ''}
                 className="deadline-time"
                 style={inputStyle}
               />
             </div>
-            {deadlineDate !== '' && (
+            {(deadlineDate !== '' || deadlineTime !== '') && (
               <p
                 className="muted"
                 style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--muted)' }}
               >
-                {deadlineTime === ''
-                  ? 'No time set — defaults to end of day (11:59 PM).'
-                  : 'Due at the selected time.'}
+                {deadlineDate === ''
+                  ? 'Pick a date for the deadline to take effect.'
+                  : deadlineTime === ''
+                    ? 'No time set — defaults to end of day (11:59 PM).'
+                    : 'Due at the selected time.'}
               </p>
             )}
           </div>
