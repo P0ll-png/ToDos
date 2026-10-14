@@ -10,9 +10,13 @@ vi.mock('../context/SessionProvider', () => ({
   useSession: () => useSessionMock(),
 }));
 
-import { Header } from './Header';
+// The officer-only Members control, the account name, and the sign-in/out
+// button were extracted from Header into AccountControls (design OD-1). These
+// assertions are unchanged — they now target the same elements rendered via
+// AccountControls, which Header composes.
+import { AccountControls } from './AccountControls';
 
-describe('Header officer-only controls', () => {
+describe('AccountControls officer-only controls', () => {
   beforeEach(() => {
     useSessionMock.mockReset();
   });
@@ -25,7 +29,7 @@ describe('Header officer-only controls', () => {
       isOfficer: true,
       refreshProfile: vi.fn(),
     });
-    render(<Header />);
+    render(<AccountControls />);
     expect(
       screen.getByRole('button', { name: 'Members' }),
     ).toBeInTheDocument();
@@ -39,7 +43,7 @@ describe('Header officer-only controls', () => {
       isOfficer: false,
       refreshProfile: vi.fn(),
     });
-    render(<Header />);
+    render(<AccountControls />);
     expect(
       screen.queryByRole('button', { name: 'Members' }),
     ).not.toBeInTheDocument();
@@ -53,7 +57,7 @@ describe('Header officer-only controls', () => {
       isOfficer: false,
       refreshProfile: vi.fn(),
     });
-    render(<Header />);
+    render(<AccountControls />);
     expect(
       screen.queryByRole('button', { name: 'Members' }),
     ).not.toBeInTheDocument();
