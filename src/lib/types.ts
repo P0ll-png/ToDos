@@ -154,11 +154,16 @@ export interface TaskCompletion {
 
 // ============ absences (FEAT) ============
 
-/** Reason category enum for an absence request. */
+/**
+ * Reason category enum for an absence request. The literals MUST match the
+ * Postgres `public.absence_reason` enum in 0003 exactly, since the value is
+ * sent verbatim to the DB — in particular 'school_related_activity', not
+ * 'school_activity'.
+ */
 export type AbsenceReason =
   | 'illness'
   | 'family_emergency'
-  | 'school_activity'
+  | 'school_related_activity'
   | 'other';
 
 /** Officer-controlled status enum for an absence request. */

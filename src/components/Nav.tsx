@@ -11,25 +11,53 @@
  */
 import type { ReactNode } from 'react';
 import { useNav, type Page } from '../context/NavProvider';
+import { useSession } from '../context/SessionProvider';
+import { useAbsencePendingCount } from '../data/useAbsencePendingCount';
 import { AccountControls } from './AccountControls';
 
 interface NavItem {
   page: Page;
   label: string;
-  /** Slot for a trailing badge (e.g. the officer pending count). */
-  badge?: ReactNode;
 }
 
-// FEAT-005 wires the officer pending-count badge into the Absences item's
-// `badge` slot (sourced from a lightweight count query — design OD-4).
 const NAV_ITEMS: NavItem[] = [
   { page: 'board', label: 'Board' },
-  { page: 'absences', label: 'Absences', badge: null },
+  { page: 'absences', label: 'Absences' },
   { page: 'reviewers', label: 'Reviewers' },
 ];
 
 export function Nav() {
   const { page, setPage } = useNav();
+  const { isOfficer } = useSession();
+  // Officer pending-count badge (design OD-4): the count query is enabled only
+  // for officers; the badge is hidden entirely for non-officers or when zero.
+  const { count } = useAbsencePendingCount(isOfficer);
+
+  // The live badge element shown after the Absences label.
+  const badgeFor = (itemPage: Page): ReactNode => {
+    if (itemPage !== 'absences' || !isOfficer || count <= 0) return null;
+    return (
+      <span
+        aria-label={`${count} pending`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: '1.25rem',
+          height: '1.25rem',
+          padding: '0 0.35rem',
+          background: 'var(--status-pending)',
+          color: 'var(--status-pending-fg)',
+          borderRadius: '999px',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        {count}
+      </span>
+    );
+  };
 
   return (
     <nav
@@ -57,7 +85,7 @@ export function Nav() {
               style={active ? activeTabStyle : tabStyle}
             >
               {item.label}
-              {item.badge}
+              {badgeFor(item.page)}
             </button>
           );
         })}

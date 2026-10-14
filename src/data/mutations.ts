@@ -10,7 +10,14 @@
  * error. Realtime (or the fallback poll) is what reconciles successful writes.
  */
 import { supabase } from '../lib/supabase';
-import type { EventType, TaskStatus, UserRole } from '../lib/types';
+import { SIGNED_URL_TTL_SECONDS } from '../lib/storage';
+import type {
+  AbsenceReason,
+  AbsenceStatus,
+  EventType,
+  TaskStatus,
+  UserRole,
+} from '../lib/types';
 
 export type MutationError = 'not-configured' | 'denied' | 'network';
 
@@ -288,4 +295,176 @@ export async function setRole(
     .update({ role })
     .eq('id', userId);
   return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+// ============ absences (privacy-critical; RLS is the sole gate) ============
+
+interface CreateAbsenceRequestInput {
+  userId: string;
+  dateFrom: string; // 'YYYY-MM-DD'
+  dateTo: string; // 'YYYY-MM-DD'
+  subjectIds: string[];
+  allClasses: boolean;
+  reasonCategory: AbsenceReason;
+  explanation?: string;
+}
+
+/**
+ * The create result carries the new request id so the caller can upload
+ * attachments into {user_id}/{request_id}/... AFTER the row exists (the storage
+ * ea_insert WITH CHECK requires the parent request to exist and be pending).
+ */
+export interface CreateAbsenceResult extends MutationResult {
+  id?: string;
+}
+
+/**
+ * createAbsenceRequest — member insert. It writes ONLY the member-owned fields
+ * (user_id, date_from, date_to, subject_ids, all_classes, reason_category,
+ * explanation) and NEVER status/officer_remark/reviewed_by/reviewed_at: the DB
+ * defaults supply status='pending' and leave the officer/review fields NULL, so
+ * ar_insert's WITH CHECK (user_id = auth.uid() and status = 'pending') is always
+ * satisfied for a legitimate submit. Returns the new id (via `select`) so the
+ * caller can upload attachments into the deterministic path afterwards.
+ */
+export async function createAbsenceRequest(
+  input: CreateAbsenceRequestInput,
+): Promise<CreateAbsenceResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { data, error } = await supabase
+    .from('absence_requests')
+    .insert({
+      user_id: input.userId,
+      date_from: input.dateFrom,
+      date_to: input.dateTo,
+      subject_ids: input.subjectIds,
+      all_classes: input.allClasses,
+      reason_category: input.reasonCategory,
+      explanation: input.explanation ?? '',
+    })
+    .select('id')
+    .single();
+  if (error) return { ok: false, error: classify(error) };
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+export interface UploadAttachmentInput {
+  requestId: string;
+  path: string; // {user_id}/{request_id}/{safeName}
+  file: File;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/**
+ * addAbsenceAttachment — uploads a single file to the PRIVATE
+ * 'excuse-attachments' bucket AFTER the request row exists, then inserts the
+ * attachment row. If the storage upload fails the attachment row is NOT
+ * inserted and the error is surfaced; the already-created request is left
+ * pending so the member can delete it. The bucket's MIME/size config is the
+ * server backstop in addition to the client-side validateFile fast-path.
+ */
+export async function addAbsenceAttachment(
+  input: UploadAttachmentInput,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const upload = await supabase.storage
+    .from('excuse-attachments')
+    .upload(input.path, input.file, { contentType: input.mimeType });
+  if (upload.error) {
+    return { ok: false, error: classify(upload.error as { message?: string }) };
+  }
+  const { error } = await supabase.from('absence_attachments').insert({
+    request_id: input.requestId,
+    storage_path: input.path,
+    file_name: input.fileName,
+    mime_type: input.mimeType,
+    size_bytes: input.sizeBytes,
+  });
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+interface UpdateAbsenceStatusInput {
+  status: AbsenceStatus;
+  officerRemark?: string | null;
+  reviewedBy?: string | null;
+}
+
+/**
+ * updateAbsenceStatus — the officer path. RLS (ar_update_officer, is_officer())
+ * is the sole gate; a member's update is denied. Writes the review fields the
+ * officer owns.
+ */
+export async function updateAbsenceStatus(
+  id: string,
+  input: UpdateAbsenceStatusInput,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('absence_requests')
+    .update({
+      status: input.status,
+      officer_remark: input.officerRemark ?? null,
+      reviewed_by: input.reviewedBy ?? null,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+/**
+ * deleteAbsenceRequest — member-while-pending path. RLS (ar_delete_member)
+ * enforces the own-and-pending window; the UI hides delete once not pending as
+ * convenience only. Attachment rows and their storage objects cascade/clean up
+ * per the migration's ON DELETE CASCADE on absence_attachments.
+ */
+export async function deleteAbsenceRequest(id: string): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('absence_requests')
+    .delete()
+    .eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+// ============ signed URLs (private buckets; mint on demand per click) ============
+
+export type SignedUrlError = 'not-configured' | 'denied' | 'network';
+
+export type SignedUrlResult =
+  | { ok: true; url: string }
+  | { ok: false; error: SignedUrlError };
+
+/** User-facing copy for a signed-URL failure (per-row inline). */
+export const SIGNED_URL_MESSAGES: Record<SignedUrlError, string> = {
+  'not-configured': "Couldn't open the file, try again",
+  denied: "You don't have access to this file",
+  network: "Couldn't open the file, try again",
+};
+
+/**
+ * signedUrlFor — mint a short-lived signed URL for a private storage object on
+ * demand (design OD-5). Minting is governed by the storage SELECT policy, so a
+ * guessed/forbidden path yields a classified error, never a file; the path or a
+ * partial URL is never surfaced. Pass `{ download: file_name }` to force a save
+ * with the row's filename (the only reliable cross-origin mechanism, via the
+ * Storage Content-Disposition); omit it for an inline preview in a new tab.
+ */
+export async function signedUrlFor(
+  bucket: string,
+  path: string,
+  opts?: { download?: string | boolean },
+): Promise<SignedUrlResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS, opts);
+  if (error || !data?.signedUrl) {
+    return {
+      ok: false,
+      error: classify((error as { message?: string } | null) ?? null),
+    };
+  }
+  return { ok: true, url: data.signedUrl };
 }
