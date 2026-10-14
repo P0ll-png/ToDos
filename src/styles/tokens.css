@@ -28,6 +28,27 @@ html[data-mode='dark'] {
   --danger-contrast: #1a0a0b;
   --dot-ring: #e8edf5;
   --scrim: rgba(5, 10, 20, 0.6);
+  /* event-type chips/badges — background + its own readable foreground */
+  --ev-school: #8fb4ff;
+  --ev-school-fg: #0e1726;
+  --ev-quiz: #6fe3c0;
+  --ev-quiz-fg: #0e1726;
+  --ev-exam: #ff9aa0;
+  --ev-exam-fg: #1a0a0b;
+  --ev-pres: #d3a6f2;
+  --ev-pres-fg: #0e1726;
+  /* absence status badges */
+  --status-pending: #ffd08a;
+  --status-pending-fg: #0e1726;
+  --status-ack: #6fe3c0;
+  --status-ack-fg: #0e1726;
+  --status-followup: #ff9aa0;
+  --status-followup-fg: #1a0a0b;
+  /* personal-tracker done treatment — a dim readable text, equals --muted */
+  --task-done: #9aa8bf;
+  /* upcoming-assessment marker */
+  --assess-badge: #ff9aa0;
+  --assess-badge-fg: #1a0a0b;
   --radius: 12px;
   --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     Arial, sans-serif;
@@ -50,6 +71,27 @@ html[data-mode='light'] {
   --danger-contrast: #ffffff;
   --dot-ring: #141c2b;
   --scrim: rgba(15, 23, 42, 0.45);
+  /* event-type chips/badges — background + its own readable foreground */
+  --ev-school: #2563eb;
+  --ev-school-fg: #ffffff;
+  --ev-quiz: #0e7a5f;
+  --ev-quiz-fg: #ffffff;
+  --ev-exam: #b4232a;
+  --ev-exam-fg: #ffffff;
+  --ev-pres: #7a3db8;
+  --ev-pres-fg: #ffffff;
+  /* absence status badges */
+  --status-pending: #8a5a00;
+  --status-pending-fg: #ffffff;
+  --status-ack: #0e7a5f;
+  --status-ack-fg: #ffffff;
+  --status-followup: #b4232a;
+  --status-followup-fg: #ffffff;
+  /* personal-tracker done treatment — a dim readable text, equals --muted */
+  --task-done: #5b6881;
+  /* upcoming-assessment marker */
+  --assess-badge: #b4232a;
+  --assess-badge-fg: #ffffff;
   --radius: 12px;
   --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     Arial, sans-serif;

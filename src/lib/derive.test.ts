@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { subjectHasPending, isOverdue, localTodayISO } from './derive';
+import { subjectHasPending, subjectGlows, isOverdue, localTodayISO } from './derive';
 import type { Task } from './types';
 
 function task(partial: Partial<Task> & { id: string }): Task {
@@ -32,6 +32,61 @@ describe('subjectHasPending', () => {
   it('is false when no tasks match the subject', () => {
     const tasks = [task({ id: '1', subjectId: 'sci', status: 'pending' })];
     expect(subjectHasPending('math', tasks)).toBe(false);
+  });
+});
+
+describe('subjectGlows', () => {
+  it('signed-out (viewer null) glows on any pending task', () => {
+    const tasks = [task({ id: '1', subjectId: 'math', status: 'pending' })];
+    expect(subjectGlows('math', tasks, null)).toBe(true);
+  });
+
+  it('signed-out behaves like subjectHasPending (no glow when all done)', () => {
+    const tasks = [task({ id: '1', subjectId: 'math', status: 'done' })];
+    expect(subjectGlows('math', tasks, null)).toBe(false);
+  });
+
+  it('viewer with signedIn=false behaves as signed-out', () => {
+    const tasks = [task({ id: '1', subjectId: 'math', status: 'pending' })];
+    expect(
+      subjectGlows('math', tasks, {
+        signedIn: false,
+        completedTaskIds: new Set(['1']),
+      }),
+    ).toBe(true);
+  });
+
+  it('signed-in glows only on an unfinished pending task', () => {
+    const tasks = [
+      task({ id: '1', subjectId: 'math', status: 'pending' }),
+      task({ id: '2', subjectId: 'math', status: 'pending' }),
+    ];
+    expect(
+      subjectGlows('math', tasks, {
+        signedIn: true,
+        completedTaskIds: new Set(['1']),
+      }),
+    ).toBe(true);
+  });
+
+  it('signed-in with the only pending task completed does not glow', () => {
+    const tasks = [task({ id: '1', subjectId: 'math', status: 'pending' })];
+    expect(
+      subjectGlows('math', tasks, {
+        signedIn: true,
+        completedTaskIds: new Set(['1']),
+      }),
+    ).toBe(false);
+  });
+
+  it('done tasks never glow for a signed-in viewer', () => {
+    const tasks = [task({ id: '1', subjectId: 'math', status: 'done' })];
+    expect(
+      subjectGlows('math', tasks, {
+        signedIn: true,
+        completedTaskIds: new Set(),
+      }),
+    ).toBe(false);
   });
 });
 

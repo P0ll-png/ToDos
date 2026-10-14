@@ -12,6 +12,31 @@ export function subjectHasPending(subjectId: string, tasks: Task[]): boolean {
 }
 
 /**
+ * Viewer-dependent glow. The halo means different things depending on who is
+ * looking, and is always DERIVED (never stored):
+ *  - Signed-out (viewer null or !signedIn): glows iff ANY task for the subject
+ *    is pending — delegates to subjectHasPending.
+ *  - Signed-in: glows iff there is >= 1 pending task for the subject whose id
+ *    is NOT in completedTaskIds (i.e. still unfinished FOR ME). A done task
+ *    never glows either way.
+ */
+export function subjectGlows(
+  subjectId: string,
+  tasks: Task[],
+  viewer: { signedIn: boolean; completedTaskIds: Set<string> } | null,
+): boolean {
+  if (!viewer || !viewer.signedIn) {
+    return subjectHasPending(subjectId, tasks);
+  }
+  return tasks.some(
+    (t) =>
+      t.subjectId === subjectId &&
+      t.status === 'pending' &&
+      !viewer.completedTaskIds.has(t.id),
+  );
+}
+
+/**
  * overdue: pending AND deadline present AND the deadline instant is strictly
  * before `now`. deadline is an ISO timestamptz string; we compare parsed
  * milliseconds. `now` defaults to the current instant and is injectable for
