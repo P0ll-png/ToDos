@@ -51,6 +51,82 @@ Supabase **SQL editor** and run it, or apply it with the Supabase CLI
 The migration seeds **no** data — add subjects, schedule slots, and tasks
 yourself (via the app as an Officer, or directly in Supabase).
 
+## 2a. Apply the extension schema (0003) and create the storage buckets
+
+The extension adds events, a per-account task tracker, absences (with private
+attachments), and reviewers (shared study files). Two of these features store
+files in Supabase Storage. Buckets and their MIME/size limits are a **manual**
+step (they live in `storage.buckets` and are configured through the dashboard or
+Storage API, not hand-inserted); the `storage.objects` RLS policies are in the
+migration. **Create the buckets before applying 0003** so the policies and the
+first uploads have their buckets in place.
+
+### Step 1 — create two PRIVATE storage buckets
+
+In the dashboard under **Storage -> Buckets -> New bucket** (or via the CLI/API),
+create both with **public = off**:
+
+| Bucket | Public | Allowed MIME types | File size limit |
+| --- | --- | --- | --- |
+| `excuse-attachments` | off | `application/pdf`, `image/jpeg`, `image/png` | `5 MB` |
+| `reviewers` | off | `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/vnd.openxmlformats-officedocument.presentationml.presentation`, `image/jpeg`, `image/png` | `20 MB` |
+
+> **Keep the bucket limits in lockstep with the DB CHECKs.** `0003` also enforces
+> MIME and size via `attach_mime`/`attach_size` (5 MB) and
+> `reviewer_mime`/`reviewer_size` (20 MB) CHECK constraints. The **bucket
+> `file_size_limit` is the authoritative byte cap** (it rejects the actual
+> uploaded bytes); the DB CHECK validates only the client-supplied `size_bytes`
+> metadata on the row. A dashboard-only change to a bucket limit would silently
+> diverge from the CHECK, so change both together.
+
+### Step 2 — apply `supabase/migrations/0003_classboard_ext.sql`
+
+Paste it into the SQL editor and run it (or `supabase db push`). It creates:
+
+- enums `event_type`, `absence_reason`, `absence_status`;
+- tables `events`, `task_completions`, `absence_requests`,
+  `absence_attachments`, `reviewers` (with the MIME/size/date-range/scope/time
+  CHECK constraints);
+- RLS on all five tables, with explicit `GRANT`s (no `anon` grant on
+  `task_completions`, the absence tables, or `reviewers`) and named policies for
+  `anon`/`authenticated`;
+- the four `excuse-attachments` and three `reviewers` policies on
+  `storage.objects`;
+- the Realtime publication add for `events`, `task_completions`, `reviewers`,
+  and `alter table public.task_completions replica identity full`.
+
+It reuses the existing `public.is_officer()` helper and does **not** modify
+`0001_init.sql` or `0002_deadline_timestamptz.sql`. It seeds **no** data — no
+events and no reviewers are inserted; add those through the app.
+
+### Step 3 — privacy posture and signed URLs
+
+- Both buckets are private. Downloads are served only through **short-lived
+  signed URLs** (TTL **60 s**) minted on demand per click — never public URLs.
+- Excuse attachments are stored under `{user_id}/{request_id}/filename` and are
+  visible **only to the uploading member and class officers**; the form shows
+  the notice "Attachments are visible only to you and class officers." A member
+  cannot read another member's attachment via the UI, the API, or a guessed
+  storage path (two independent layers: the `absence_attachments` row — and thus
+  its `storage_path` — is never disclosed to a non-owner, and even a guessed path
+  fails the storage SELECT policy).
+- Reviewers are stored under `{uploader_id}/{reviewer_id}/filename`; any
+  signed-in user may download, anon cannot (no anon storage policy).
+
+### Step 4 — confirm anon has no bucket access
+
+No `anon` storage policy is created for either bucket, so an anonymous visitor
+cannot mint a signed URL or read any object. Confirm by attempting an anonymous
+`createSignedUrl` against either bucket — it must be denied.
+
+### Replica-identity note (task_completions)
+
+`task_completions` is published and its SELECT policy is **row-dependent**
+(`user_id = auth.uid()`), so `0003` sets `replica identity full` on it per the
+replica-identity contract in section 5 and `0001`. The other two published
+tables (`events`, `reviewers`) have row-independent SELECT policies and keep the
+default identity.
+
 ## 3. Google OAuth (optional sign-in method)
 
 Email/password works out of the box. To enable Google login:
@@ -177,9 +253,22 @@ RLS_TEST_TARGET_PROFILE_ID=<a third profile id the officer may promote/demote
                             and whose theme the officer must not overwrite>
 ```
 
-Create the two accounts via the app, promote one with the officer-bootstrap SQL
-(section 4), and pass a third profile id as the target. The suite restores any
-row it changes.
+The extension (0003) RLS cases need a **second member account** (to prove one
+member cannot read another's absence request or attachment) and a seeded pending
+absence request owned by the first member with one attachment:
+
+```
+RLS_TEST_MEMBER2_EMAIL=<a second seeded account whose role is 'member'>
+RLS_TEST_MEMBER2_PASSWORD=<...>
+RLS_TEST_ABSENCE_REQUEST_ID=<a pending absence_requests id owned by the first member>
+RLS_TEST_ABSENCE_ATTACHMENT_ID=<an absence_attachments id under that request>
+```
+
+Create the member/officer accounts via the app, promote one with the
+officer-bootstrap SQL (section 4), pass a third profile id as the target, and —
+for the extension cases — create a second member and seed one pending absence
+request + attachment owned by the first member. The suite restores any row it
+changes.
 
 ### Manual run (curl)
 

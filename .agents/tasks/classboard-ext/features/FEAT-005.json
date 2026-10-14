@@ -1,0 +1,32 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "The Absences (excuse submission) workflow: refetch-on-demand data hooks with the privacy-safe name-only embed, member form with private attachment upload, member 'My requests' list, officer inbox with filters and signed-URL attachment preview, StatusBadge, and the officer pending-count nav badge. Privacy-critical (medical certificates). Grounded in design.md FR-4.*, OD-2/OD-5, Data layer -> Profiles-embed rule + useAbsenceRequests/useAbsencePendingCount, Components -> Absences, Error handling. Depends on FEAT-001 (tables/storage policies), FEAT-002 (types, storage/datewindow fns, status tokens), FEAT-003 (nav shell + AbsencesPage slot).",
+  "steps": [
+    "Create src/data/useAbsenceRequests.ts: refetch-on-demand (NOT realtime) exposing { data, status, retry, refetch }, refetching on mount, window focus, and after a mutation. Member mode selects own rows (RLS returns only theirs). Officer mode selects all with the disambiguated embed .select('*, student:profiles!absence_requests_user_id_fkey(name)') — name ONLY, never profiles(*) or email — mapped to studentName; leave reviewed_by unembedded.",
+    "Create src/data/useAbsencePendingCount.ts: a head:true, count:'exact' query on status='pending', refetched on nav mount and after officer status changes.",
+    "Extend src/data/mutations.ts: createAbsenceRequest(input) writing ONLY member-owned fields (user_id, date_from, date_to, subject_ids, all_classes, reason_category, explanation) and never status/officer_remark/reviewed_by/reviewed_at (DB defaults supply pending); addAbsenceAttachment(meta) uploading each file to supabase.storage.from('excuse-attachments').upload(path, file) AFTER the request row exists, then inserting the attachment row; updateAbsenceStatus(id, { status, officer_remark, reviewed_by }) (officer path); deleteAbsenceRequest(id) (member-while-pending); signedUrlFor(bucket, path, opts?: { download?: string | boolean }) wrapping createSignedUrl(path, SIGNED_URL_TTL_SECONDS, opts) -> { ok, url } or a classified error. On a storage/validation failure leave the request pending (member can delete) and surface which file failed.",
+    "Create src/components/StatusBadge.tsx: shared pill for pending/acknowledged/needs_followup using --status-* tokens + an icon + text (never color-only).",
+    "Create src/components/AbsenceForm.tsx: CalendarField x2 (validated with isValidRange + DB CHECK backstop), a subjects multi-select + an 'All classes' checkbox (sets all_classes, disables the multi-select), reason <select>, <textarea maxLength=500> with a live counter, a file input accepting up to 3 files validated by validateFile(EXCUSE_MIME, EXCUSE_MAX) with a per-file INDETERMINATE 'Uploading…' indicator (spinner + disabled submit, no percent bar) and inline type/size errors, and the fixed notice 'Attachments are visible only to you and class officers.'. Submit via createAbsenceRequest then uploads + addAbsenceAttachment.",
+    "Create src/components/MyAbsenceList.tsx: member 'My requests' list with StatusBadge + officer remark; a delete button shown only while status === 'pending' (RLS is the real gate).",
+    "Create src/components/OfficerAbsenceInbox.tsx: all rows ordered created_at desc, client-side filters — status <select>, date-range via rangeOverlaps, subject <select> (a request matches S iff all_classes OR subject_ids contains S), case-insensitive student-name over studentName. Each row opens attachments via signedUrlFor('excuse-attachments', path) (default inline disposition) in a new tab for preview, with an optional 'Save a copy' that re-mints with { download: file_name }; a status <select> + remark <textarea> saved via updateAbsenceStatus, then trigger the pending-count refetch. Per-row busy/error state covers mint latency and denials. (Class-scale volume assumed; no pagination.)",
+    "Replace the FEAT-003 placeholder src/components/AbsencesPage.tsx with the real gated page: reads useSession and renders SignInGate when signed out; branches on isOfficer into MyAbsenceList+AbsenceForm (member) vs OfficerAbsenceInbox (officer); owns loading/empty/error states with the existing status/retry pattern.",
+    "Wire useAbsencePendingCount into src/components/Nav.tsx's Absences pending badge (hidden when zero or non-officer)."
+  ],
+  "acceptance_criteria": [
+    "A signed-out visitor sees SignInGate on the Absences page; a member sees the form + their own requests; an officer sees the inbox.",
+    "createAbsenceRequest never sends status/officer/review fields; attachments upload only after the request row exists.",
+    "Officer inbox filters (status, date-range, subject with all_classes-matches-every-subject, student-name) work client-side; attachments open via a freshly minted signed URL; a wrong path yields an inline access error, not a file.",
+    "No profiles embed selects email or profiles(*) — only name.",
+    "The officer pending-count badge in Nav shows the count of status='pending' requests and refreshes after a status change."
+  ],
+  "verification": [
+    "Run `npm run typecheck` and `npm run test` and confirm both pass.",
+    "Run `npm run lint` and confirm it passes.",
+    "Run `npm run build` and confirm it succeeds.",
+    "Note: end-to-end privacy enforcement (a second member denied, officer allowed, guessed-path denied) is asserted by the RLS integration suite in FEAT-006 against a live project."
+  ],
+  "status": "pending",
+  "blocked_reason": null,
+  "findings": ""
+}

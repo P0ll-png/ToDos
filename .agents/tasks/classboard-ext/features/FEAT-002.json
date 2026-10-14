@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Shared client primitives that every later UI feature depends on: new TypeScript types, the pure src/lib functions with unit tests (viewer-dependent glow, upcoming-assessment, month-grid, file validation, date-window), and the new theme tokens + AA harness. No UI wiring yet. Grounded in design.md 'New pure functions', 'New types', and 'New theme tokens' sections, mirroring derive.test.ts and palette-aa.test.ts.",
+  "status": "pending",
+  "steps": [
+    "Extend src/lib/types.ts with: EventType/AbsenceReason/AbsenceStatus string-literal unions matching the enums; EventRow/EventItem (event_date/eventDate date-only 'YYYY-MM-DD'; start_time/end_time 'HH:MM:SS' | null); TaskCompletionRow/TaskCompletion (user_id/task_id/completed_at); AbsenceRequestRow/AbsenceRequest (subjectIds: string[], allClasses, enum fields, nullable officerRemark/reviewedBy/reviewedAt, optional studentName); AbsenceAttachmentRow/AbsenceAttachment; ReviewerRow/Reviewer (optional uploaderName); CalendarItem (kind 'task'|'event', type, title, id, datePart 'YYYY-MM-DD', startTime 'HH:MM:SS'|null, done flag for tasks) and MonthCell ({ dateYMD, inMonth, isToday }). Keep snake->camel convention + date-contract comments.",
+    "Extend src/lib/derive.ts: add subjectGlows(subjectId, tasks, viewer: { signedIn; completedTaskIds: Set<string> } | null) — null/signed-out delegates to subjectHasPending; signed-in glows iff >=1 pending task whose id is NOT in completedTaskIds. Keep subjectHasPending and its tests green. Add cases to src/lib/derive.test.ts: signed-out glows on any pending; signed-in glows only on unfinished pending; signed-in with only pending completed -> no glow; done tasks never glow; viewer null behaves as signed-out.",
+    "Create src/lib/events.ts + events.test.ts: hasUpcomingAssessment(subjectId, events: EventItem[], today = localTodayISO()) true iff some event matches subjectId, type in {quiz,exam,presentation} (school_event excluded), and today <= event_date <= today+7 inclusive; addDaysYMD(ymd, n) helper doing calendar math on 'YYYY-MM-DD' via UTC-midnight Date then reformatting (never leak a Date into comparisons). Tests: include quiz/exam/presentation, exclude school_event; boundaries today, +7 (included), +8 (excluded), yesterday (excluded); subject isolation; addDaysYMD month/year rollover.",
+    "Create src/lib/calendar.ts + calendar.test.ts: buildMonthGrid(year, month0, today) -> 42 MonthCell (6x7, Monday-first day 1=Mon..7=Sun, leading/trailing adjacent-month cells inMonth=false, isToday set); bucketItemsByDay(cells, items) -> Map<dateYMD, CalendarItem[]> (task keyed on deadlineDatePart, event on event_date); visibleWithOverflow(items, max=3) -> { shown, moreCount=max(0,len-max) }. Tests: Monday-first ordering, 42 cells, a month starting Sunday (max leading) and one starting Monday (zero leading), isToday detection, task-vs-event bucketing, overflow at exactly 3 (no +more), exactly 4 (moreCount 1), 0 items.",
+    "Create src/lib/storage.ts + storage.test.ts: SIGNED_URL_TTL_SECONDS=60; EXCUSE_MIME=['application/pdf','image/jpeg','image/png'], EXCUSE_MAX=5*1024*1024; REVIEWER_MIME (five types), REVIEWER_MAX=20*1024*1024; validateFile({type,size,name}, allowed, maxBytes) -> {ok:true}|{ok:false; reason:'type'|'size'}; buildStoragePath(userId, seg, fileName) -> `${userId}/${seg}/${safeName}`; sanitizeFileName(name) (strip path separators/.., collapse spaces, keep extension). Tests: type reject, size reject (exactly-at-limit passes, 1 byte over fails), ok case; sanitizeFileName strips / and ..; buildStoragePath shape.",
+    "Create src/lib/datewindow.ts + datewindow.test.ts: isValidRange(from, to) (to >= from, both 'YYYY-MM-DD'); rangeOverlaps(a, b). Tests: equal dates ok, reversed rejected; overlaps touching, nested, disjoint.",
+    "Add the new tokens to BOTH mode blocks in src/styles/tokens.css using design.md's starting hex: --ev-school/-fg, --ev-quiz/-fg, --ev-exam/-fg, --ev-pres/-fg; --status-pending/-fg, --status-ack/-fg, --status-followup/-fg; --task-done (= each mode's --muted value); --assess-badge/-fg. Do NOT modify theme-core.ts/resolveTokens.",
+    "Create src/lib/palette-ext-aa.test.ts importing ONLY contrastRatio and AA_NORMAL from theme-core (NOT DARK_BASE/LIGHT_BASE/resolveTokens). Assert over a literal in-file { mode, token, bg, fg } hex table mirroring tokens.css: every *-fg clears AA_NORMAL on its own bg; --task-done clears AA_NORMAL on --surface and --bg hex of that mode. If a pair fails, nudge the hex in BOTH tokens.css and the test table (kept identical) until green."
+  ],
+  "acceptance_criteria": [
+    "All new types compile and are exported from src/lib/types.ts.",
+    "subjectGlows, hasUpcomingAssessment/addDaysYMD, buildMonthGrid/bucketItemsByDay/visibleWithOverflow, validateFile/buildStoragePath/sanitizeFileName, isValidRange/rangeOverlaps all exist and their co-located test suites pass with the boundary cases from design.md.",
+    "The new tokens exist in both mode blocks of tokens.css and palette-ext-aa.test.ts passes with every fg/bg pair >= AA_NORMAL; existing palette-aa.test.ts still passes.",
+    "theme-core.ts is unchanged."
+  ],
+  "verification": [
+    "Run `npm run test` and confirm all new src/lib suites plus palette-ext-aa.test.ts pass, and the existing derive.test.ts and palette-aa.test.ts remain green.",
+    "Run `npm run typecheck` and confirm it passes.",
+    "Run `npm run build` and confirm it succeeds."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -8,7 +8,10 @@ Tech: React + TypeScript + Vite, Supabase (auth + database with row-level securi
 
 1. Copy `.env.example` to `.env` and fill in your Supabase project URL and anon
    key.
-2. Apply `supabase/migrations/0001_init.sql` to your Supabase project.
+2. Apply `supabase/migrations/0001_init.sql` to your Supabase project, then
+   create the two private storage buckets and apply
+   `supabase/migrations/0003_classboard_ext.sql` (see
+   [SETUP.md §2a](./SETUP.md#2a-apply-the-extension-schema-0003-and-create-the-storage-buckets)).
 3. Install and run:
 
    ```
@@ -16,7 +19,8 @@ Tech: React + TypeScript + Vite, Supabase (auth + database with row-level securi
    npm run dev
    ```
 
-See [SETUP.md](./SETUP.md) for the full guide: environment variables, Google
+See [SETUP.md](./SETUP.md) for the full guide: environment variables, applying
+the extension schema (0003) and creating the private storage buckets, Google
 OAuth, promoting the first Officer, Realtime verification, and RLS proofs.
 
 ## Scripts

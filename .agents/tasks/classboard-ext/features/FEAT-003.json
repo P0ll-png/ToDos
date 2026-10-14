@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "The navigation shell: NavProvider state context, AccountControls extracted from Header, the Nav bar, PageRouter, and SignInGate, with App wrapping NavProvider and rendering Nav + PageRouter. This is the PREREQUISITE shell for the Absences and Reviewers pages (FEAT-005/006). State-based page switching, no react-router. Grounded in design.md OD-1 and Components -> Navigation. Depends on FEAT-002 (no hard import yet, but keeps the shell building before features land).",
+  "status": "pending",
+  "steps": [
+    "Create src/context/NavProvider.tsx exposing { page: 'board' | 'absences' | 'reviewers'; setPage } via context, pattern-matching src/context/SessionProvider.tsx / ThemeProvider.tsx (createContext + a useNav() hook that throws outside the provider).",
+    "Extract src/components/AccountControls.tsx from src/components/Header.tsx: move the Appearance button + AppearancePanel modal, the officer-only Members button + AdminPanel modal, the account-name span, the sign-in/sign-out button + AuthDialog modal, and the showAuth/showAdmin/showAppearance useState hooks and handleSignOut into AccountControls. Preserve the exact token styles and sr/aria labels. Header keeps the logo + title and composes <AccountControls />.",
+    "Create src/components/Nav.tsx: a themed top row of three real <button>s (Board / Absences / Reviewers) wired to setPage, each with aria-current='page' on the active one; compose <AccountControls />. Leave a slot/placeholder for the officer pending badge on Absences (wired by FEAT-005). Tokens only; global focus ring.",
+    "Create src/components/PageRouter.tsx switching on page -> <Layout /> (board) | <AbsencesPage /> | <ReviewersPage />. Create minimal placeholder src/components/AbsencesPage.tsx and src/components/ReviewersPage.tsx (each gated via useSession: render SignInGate when signed out, otherwise a 'coming soon' stub) so this feature builds; FEAT-005/006 replace them.",
+    "Create src/components/SignInGate.tsx: a short prompt + a 'Sign in' button that opens AuthDialog inside the shared Modal; reads live useSession so it re-renders to/from the gate on auth change.",
+    "Update src/App.tsx to wrap NavProvider inside ThemeProvider (NavProvider between ThemeProvider and the content) and render <Nav /> above <PageRouter /> instead of <Layout /> directly.",
+    "Keep Header.test.tsx green: if the extraction moved an element that a test asserts on, update the test to assert against the same element now rendered via AccountControls, preserving the original assertions (do not weaken them)."
+  ],
+  "acceptance_criteria": [
+    "NavProvider, Nav, AccountControls, PageRouter, SignInGate exist; Header composes AccountControls and no auth/appearance/members control is duplicated between Header and Nav.",
+    "App renders Nav + PageRouter; switching nav buttons changes the page and sets aria-current on the active button.",
+    "AbsencesPage/ReviewersPage placeholders render SignInGate when signed out.",
+    "No react-router or any new runtime dependency is added."
+  ],
+  "verification": [
+    "Run `npm run typecheck` and `npm run test` and confirm both pass (Header.test.tsx included, adjusted only to track the extraction with equivalent assertions).",
+    "Run `npm run build` and confirm it succeeds.",
+    "Confirm package.json dependencies are unchanged (no new runtime dep)."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

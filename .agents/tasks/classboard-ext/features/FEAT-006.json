@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-006",
+  "type": "feat",
+  "description": "The Reviewers (shared study files) page, plus the RLS integration test pass across all new tables and the final accessibility/theme sweep. Grounded in design.md FR-5.*, OD-5, Data layer -> useReviewers + createReviewer/deleteReviewer, Components -> Reviewers, Testability, and SETUP.md updates. Depends on FEAT-001 (tables/storage policies/publication), FEAT-002 (storage fns, types), FEAT-003 (nav shell + ReviewersPage slot); the RLS pass covers tables from FEAT-001/004/005 too so it runs last.",
+  "steps": [
+    "Create src/data/useReviewers.ts: useRealtimeTable<ReviewerRow, Reviewer>('reviewers', rowToReviewer) with the uploader-name embed selecting name ONLY (never profiles(*)/email).",
+    "Extend src/data/mutations.ts: createReviewer(input) — generate id with crypto.randomUUID() BEFORE upload, build `{uploader_id}/{id}/{safeName}` via buildStoragePath, upload to the 'reviewers' bucket, then insert the row WITH that explicit id and storage_path; if upload fails insert nothing; if insert fails after a successful upload, remove the just-uploaded object. deleteReviewer(id, storagePath) — remove the storage object FIRST (treating storage-not-found as success/idempotent), then delete the row (RLS: owner or officer); if the object remove fails, abort before deleting the row.",
+    "Create src/components/ReviewerUploadDialog.tsx: title (required), subject <select> (required), optional description, a single file validated by validateFile(REVIEWER_MIME, REVIEWER_MAX) with the INDETERMINATE 'Uploading…' indicator (spinner + disabled submit, no percent bar); submit via createReviewer; shared Modal.",
+    "Create src/components/ReviewerCard.tsx + src/components/ReviewerGrid.tsx: a responsive card grid showing title, subject, uploader name, upload date, file-type icon + human-readable size, and a Download button that calls signedUrlFor('reviewers', path, { download: file_name }) and navigates to the returned URL (Storage sets Content-Disposition; do NOT rely on the anchor download attribute). Grid supports filter by subject <select>, search by title (text), sort by newest; an empty state; and a shared Modal confirm dialog before delete (shown for owner or officer; RLS is the real gate).",
+    "Replace the FEAT-003 placeholder src/components/ReviewersPage.tsx with the real gated page: SignInGate when signed out; loading/empty/error states; the upload entry (opens ReviewerUploadDialog in Modal) available to any signed-in user.",
+    "Extend src/__tests__/rls.integration.test.ts (skip-with-reason when env absent) with cases per design.md Testability + the acceptance criteria: anon denied read/write on task_completions/absence tables/reviewers; member denied event write, officer allowed (AC1/2); member own-row completion insert/delete ok and cross-user denied, tasks.status untouched (AC3); member reads own absence, a SECOND member denied that request AND its attachment AND a guessed storage path, officer reads both (AC7); member cannot insert an attachment object under another member's folder / a non-existent request / an acknowledged own request, but can under a still-pending own request (ea_insert gate); member cannot delete the attachment row OR the storage object once not pending (aa_delete + ea_delete_own pending gate), can while pending (AC9); any authenticated reviewer download ok, anon denied, non-owner delete denied except officer (AC11/12); the pending-count query returns the right count (AC10). Add the new env vars (second member, seeded pending request/attachment ids) and update SETUP.md section 7 with them + manual curl equivalents.",
+    "Final verification + a11y/theme pass: run the full gate (typecheck, lint, test, build) and fix any failures. Manual sweep per design.md Testability -> A11y/theme: keyboard traversal of Nav (aria-current), calendar day cells (Enter/Space + visible --focus-ring), forms, and the delete-confirm Modal (focus trap); sr-only labels for completion/status/assessment badges; render in light and dark; confirm palette-ext-aa.test.ts is green as the AA backbone (AC14). Record any live-only verification left to the convergence/finalize steps in findings.",
+    "Clean up any temporary files created during verification."
+  ],
+  "acceptance_criteria": [
+    "A signed-out visitor sees SignInGate on the Reviewers page; any signed-in user can upload a reviewer and download any reviewer; the download forces a save with the correct filename cross-origin via the SDK download option.",
+    "A non-owner cannot delete another user's reviewer except an officer; the confirm Modal appears before delete; createReviewer/deleteReviewer leave no orphaned object or row on partial failure.",
+    "The reviewers grid supports subject filter, title search, newest sort, and an empty state.",
+    "The RLS integration suite contains cases for every new table and every acceptance criterion (AC1-AC3, AC7-AC12) and either passes against a live project with 0003 + buckets applied or skips with a printed reason locally.",
+    "The full gate (typecheck, lint, test, build) passes and palette-ext-aa.test.ts is green."
+  ],
+  "verification": [
+    "Run `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build` and confirm all four succeed; palette-ext-aa.test.ts passes.",
+    "Confirm the RLS integration suite still skips cleanly with a reason when the live env is unset (no new non-skipped failures); with the SETUP.md section 7 env set against a live project with 0003 + buckets applied, confirm every new case is green (AC13).",
+    "Confirm no temporary files remain (git status is clean apart from intended changes)."
+  ],
+  "type": "feat",
+  "status": "pending",
+  "blocked_reason": null,
+  "findings": ""
+}
