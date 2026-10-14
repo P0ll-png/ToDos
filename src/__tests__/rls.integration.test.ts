@@ -31,6 +31,14 @@ const OFFICER_EMAIL = env.RLS_TEST_OFFICER_EMAIL;
 const OFFICER_PW = env.RLS_TEST_OFFICER_PASSWORD;
 const TARGET_ID = env.RLS_TEST_TARGET_PROFILE_ID;
 
+// Extension (0003) cases need a SECOND member (to prove one member cannot read
+// another's absence request/attachment) plus a seeded PENDING absence request
+// owned by the first member with one attachment. See SETUP.md section 7.
+const MEMBER2_EMAIL = env.RLS_TEST_MEMBER2_EMAIL;
+const MEMBER2_PW = env.RLS_TEST_MEMBER2_PASSWORD;
+const ABSENCE_REQUEST_ID = env.RLS_TEST_ABSENCE_REQUEST_ID;
+const ABSENCE_ATTACHMENT_ID = env.RLS_TEST_ABSENCE_ATTACHMENT_ID;
+
 const configured = Boolean(
   URL &&
     ANON &&
@@ -41,10 +49,24 @@ const configured = Boolean(
     TARGET_ID,
 );
 
+// The extension suite needs the base env PLUS the four 0003-specific vars. It is
+// skipped independently (with its own reason) when only the base env is present,
+// so the base role-escalation suite can still run on a project without the
+// seeded absence fixtures.
+const extConfigured = Boolean(
+  configured &&
+    MEMBER2_EMAIL &&
+    MEMBER2_PW &&
+    ABSENCE_REQUEST_ID &&
+    ABSENCE_ATTACHMENT_ID,
+);
+
 // Skip-with-reason: a visible, explained skip rather than a silent pass.
 const describeLive = configured
   ? describe
   : describe.skip;
+
+const describeExt = extConfigured ? describe : describe.skip;
 
 if (!configured) {
   // eslint-disable-next-line no-console
@@ -53,7 +75,20 @@ if (!configured) {
       '(RLS_TEST_SUPABASE_URL / RLS_TEST_ANON_KEY / member+officer creds / ' +
       'RLS_TEST_TARGET_PROFILE_ID). See SETUP.md section 7 for the manual steps.',
   );
+} else if (!extConfigured) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    'RLS extension (0003) suite SKIPPED: the 0003 fixtures are not set ' +
+      '(RLS_TEST_MEMBER2_EMAIL/_PASSWORD, RLS_TEST_ABSENCE_REQUEST_ID, ' +
+      'RLS_TEST_ABSENCE_ATTACHMENT_ID — a second member and a seeded pending ' +
+      'absence request + attachment owned by the first member). The base ' +
+      'role-escalation suite still runs. See SETUP.md section 7.',
+  );
 }
+
+// A random v4-shaped uuid that will not exist — used to prove a cross-user /
+// guessed id is denied (RLS returns zero rows, never another user's data).
+const NONEXISTENT_UUID = '11111111-1111-4111-8111-111111111111';
 
 function anonClient(): SupabaseClient {
   return createClient(URL as string, ANON as string, {
@@ -229,5 +264,425 @@ describeLive('RLS policy boundary (live backend)', () => {
       error,
       'officer must not write another user theme_preferences',
     ).not.toBeNull();
+  });
+});
+
+/**
+ * Extension (0003) RLS boundary — the new tables (events, task_completions,
+ * absence_requests, absence_attachments, reviewers) and the storage.objects
+ * policies for the two private buckets. Proves AC1–AC3 and AC7–AC12 against the
+ * live policies. Skipped (with its own reason) unless the 0003 fixtures are set.
+ *
+ * Fixtures (SETUP.md section 7): a second member, and a seeded PENDING
+ * absence_requests row owned by the FIRST member (RLS_TEST_ABSENCE_REQUEST_ID)
+ * with one attachment (RLS_TEST_ABSENCE_ATTACHMENT_ID). This suite restores any
+ * row it changes (it demotes the request back to pending in afterAll).
+ */
+describeExt('RLS extension boundary — 0003 tables + storage (live backend)', () => {
+  let anon: SupabaseClient;
+  let member: SupabaseClient;
+  let memberId: string;
+  let member2: SupabaseClient;
+  let member2Id: string;
+  let officer: SupabaseClient;
+  let seededStoragePath = '';
+
+  beforeAll(async () => {
+    anon = anonClient();
+    const m = await signedInClient(MEMBER_EMAIL as string, MEMBER_PW as string);
+    member = m.client;
+    memberId = m.userId;
+    const m2 = await signedInClient(
+      MEMBER2_EMAIL as string,
+      MEMBER2_PW as string,
+    );
+    member2 = m2.client;
+    member2Id = m2.userId;
+    const o = await signedInClient(
+      OFFICER_EMAIL as string,
+      OFFICER_PW as string,
+    );
+    officer = o.client;
+
+    // Learn the seeded attachment's storage path (as the owning member) so the
+    // guessed-path and storage-object cases can target the real object.
+    const { data } = await member
+      .from('absence_attachments')
+      .select('storage_path')
+      .eq('id', ABSENCE_ATTACHMENT_ID as string)
+      .maybeSingle();
+    seededStoragePath = (data?.storage_path as string) ?? '';
+  });
+
+  afterAll(async () => {
+    // Ensure the seeded request is left PENDING so the suite is re-runnable
+    // (several cases depend on its pending status; none should leave it changed,
+    // but a failed assertion mid-test could, so restore defensively).
+    if (officer && ABSENCE_REQUEST_ID) {
+      await officer
+        .from('absence_requests')
+        .update({
+          status: 'pending',
+          officer_remark: null,
+          reviewed_by: null,
+          reviewed_at: null,
+        })
+        .eq('id', ABSENCE_REQUEST_ID);
+    }
+  });
+
+  // ---- anon has no grant/policy on the private tables (defense in depth) ----
+
+  it('anon SELECT is denied/empty on task_completions, absence tables, reviewers', async () => {
+    for (const table of [
+      'task_completions',
+      'absence_requests',
+      'absence_attachments',
+      'reviewers',
+    ]) {
+      const { data, error } = await anon.from(table).select('*').limit(1);
+      // With no grant/policy the read yields either an error or zero rows —
+      // never another user's data.
+      expect(
+        (error != null || (data?.length ?? 0) === 0),
+        `anon select ${table} must be denied or empty`,
+      ).toBe(true);
+    }
+  });
+
+  it('anon INSERT is rejected on task_completions and reviewers', async () => {
+    const tc = await anon
+      .from('task_completions')
+      .insert({ user_id: NONEXISTENT_UUID, task_id: NONEXISTENT_UUID });
+    expect(tc.error, 'anon insert task_completions').not.toBeNull();
+
+    const rv = await anon.from('reviewers').insert({
+      uploader_id: NONEXISTENT_UUID,
+      subject_id: NONEXISTENT_UUID,
+      title: 'forged',
+      storage_path: 'x/y/z',
+      file_name: 'z',
+      mime_type: 'application/pdf',
+      size_bytes: 1,
+    });
+    expect(rv.error, 'anon insert reviewer').not.toBeNull();
+  });
+
+  // ---- events: member denied write, officer allowed (AC1 / AC2) ----
+
+  it('member INSERT on events is rejected; officer INSERT/DELETE succeeds (AC1/AC2)', async () => {
+    const memberIns = await member
+      .from('events')
+      .insert({ type: 'quiz', title: 'member-forged', event_date: '2099-01-01' });
+    expect(memberIns.error, 'member insert event must be denied').not.toBeNull();
+
+    const officerIns = await officer
+      .from('events')
+      .insert({ type: 'quiz', title: 'rls-test-event', event_date: '2099-01-01' })
+      .select('id')
+      .single();
+    expect(officerIns.error, 'officer insert event').toBeNull();
+    const newId = (officerIns.data as { id: string } | null)?.id;
+    expect(newId, 'officer-created event id').toBeTruthy();
+    if (newId) {
+      const del = await officer.from('events').delete().eq('id', newId);
+      expect(del.error, 'officer delete event').toBeNull();
+    }
+  });
+
+  // ---- task_completions: own-row only; tasks.status untouched (AC3) ----
+
+  it('member completion insert/delete own-row OK; cross-user denied; tasks.status untouched (AC3)', async () => {
+    // Pick any readable task (anon-readable public table).
+    const { data: tasks } = await member.from('tasks').select('id, status').limit(1);
+    const task = (tasks as { id: string; status: string }[] | null)?.[0];
+    if (!task) {
+      // No task seeded — nothing to toggle; the policy is still proven by the
+      // cross-user case below, which uses a nonexistent task id.
+      expect(task, 'at least one task should exist to toggle').toBeTruthy();
+      return;
+    }
+    const statusBefore = task.status;
+
+    // Own-row insert then delete (idempotent cleanup first in case of a prior run).
+    await member
+      .from('task_completions')
+      .delete()
+      .match({ user_id: memberId, task_id: task.id });
+    const ins = await member
+      .from('task_completions')
+      .insert({ user_id: memberId, task_id: task.id });
+    expect(ins.error, 'member own-row completion insert').toBeNull();
+
+    // The class-wide tasks.status must be unchanged by the completion toggle.
+    const { data: after } = await member
+      .from('tasks')
+      .select('status')
+      .eq('id', task.id)
+      .single();
+    expect((after as { status: string }).status).toBe(statusBefore);
+
+    const del = await member
+      .from('task_completions')
+      .delete()
+      .match({ user_id: memberId, task_id: task.id });
+    expect(del.error, 'member own-row completion delete').toBeNull();
+
+    // Cross-user insert (user_id = ANOTHER member) must fail tc_insert WITH CHECK.
+    const crossUser = await member
+      .from('task_completions')
+      .insert({ user_id: member2Id, task_id: task.id });
+    expect(
+      crossUser.error,
+      'member cannot insert a completion for ANOTHER user',
+    ).not.toBeNull();
+  });
+
+  // ---- absences: owner-or-officer read; a second member sees nothing (AC7) ----
+
+  it('member reads OWN absence request; a SECOND member is denied it (AC7)', async () => {
+    const own = await member
+      .from('absence_requests')
+      .select('*')
+      .eq('id', ABSENCE_REQUEST_ID as string)
+      .maybeSingle();
+    expect(own.error, 'owning member read own request').toBeNull();
+    expect(own.data, 'owning member sees the request').toBeTruthy();
+
+    const other = await member2
+      .from('absence_requests')
+      .select('*')
+      .eq('id', ABSENCE_REQUEST_ID as string)
+      .maybeSingle();
+    // ar_select is owner-or-officer: a second member matches no row (null), and
+    // never gets another member's data.
+    expect(other.data, 'second member must NOT see the request').toBeNull();
+  });
+
+  it('a SECOND member is denied the attachment ROW, a guessed storage PATH; officer reads both (AC7)', async () => {
+    // Row: aa_select derives from the parent — a non-owner gets zero rows.
+    const otherRow = await member2
+      .from('absence_attachments')
+      .select('*')
+      .eq('id', ABSENCE_ATTACHMENT_ID as string)
+      .maybeSingle();
+    expect(otherRow.data, 'second member must NOT see the attachment row').toBeNull();
+
+    // Guessed storage path: even with the exact path, the storage SELECT policy
+    // (ea_select_own / ea_select_officer) denies the mint for a non-owner.
+    if (seededStoragePath) {
+      const guessed = await member2.storage
+        .from('excuse-attachments')
+        .createSignedUrl(seededStoragePath, 60);
+      expect(
+        guessed.error,
+        'second member signed-URL mint on a guessed path must be denied',
+      ).not.toBeNull();
+
+      // The owning member CAN mint it.
+      const ownMint = await member.storage
+        .from('excuse-attachments')
+        .createSignedUrl(seededStoragePath, 60);
+      expect(ownMint.error, 'owning member mint').toBeNull();
+
+      // An officer can read ALL attachments (row) and mint the object.
+      const officerMint = await officer.storage
+        .from('excuse-attachments')
+        .createSignedUrl(seededStoragePath, 60);
+      expect(officerMint.error, 'officer mint any attachment').toBeNull();
+    }
+
+    // Officer can read the attachment ROW too.
+    const officerRow = await officer
+      .from('absence_attachments')
+      .select('*')
+      .eq('id', ABSENCE_ATTACHMENT_ID as string)
+      .maybeSingle();
+    expect(officerRow.error, 'officer read attachment row').toBeNull();
+    expect(officerRow.data, 'officer sees the attachment row').toBeTruthy();
+  });
+
+  // ---- ea_insert gate: own-folder + owned + PENDING parent ----
+
+  it("member cannot upload an attachment object under ANOTHER member's folder (ea_insert)", async () => {
+    const path = `${member2Id}/${ABSENCE_REQUEST_ID}/forged.pdf`;
+    const up = await member.storage
+      .from('excuse-attachments')
+      .upload(path, new Blob(['x'], { type: 'application/pdf' }), {
+        contentType: 'application/pdf',
+      });
+    expect(up.error, "upload under another member's folder must be denied").not.toBeNull();
+  });
+
+  it('member cannot upload an attachment object under a NON-EXISTENT request (ea_insert)', async () => {
+    const path = `${memberId}/${NONEXISTENT_UUID}/forged.pdf`;
+    const up = await member.storage
+      .from('excuse-attachments')
+      .upload(path, new Blob(['x'], { type: 'application/pdf' }), {
+        contentType: 'application/pdf',
+      });
+    expect(up.error, 'upload under a non-existent request must be denied').not.toBeNull();
+  });
+
+  it('member CAN upload under a still-PENDING own request, but NOT once ACKNOWLEDGED (ea_insert)', async () => {
+    // Pending: upload succeeds (the seeded request is pending).
+    const okPath = `${memberId}/${ABSENCE_REQUEST_ID}/rls-ea-insert-ok.pdf`;
+    const okUp = await member.storage
+      .from('excuse-attachments')
+      .upload(okPath, new Blob(['x'], { type: 'application/pdf' }), {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
+    expect(okUp.error, 'upload under own PENDING request should succeed').toBeNull();
+    // Clean up the test object.
+    await member.storage.from('excuse-attachments').remove([okPath]);
+
+    // Acknowledge the request (officer), then the member upload must be denied.
+    const ack = await officer
+      .from('absence_requests')
+      .update({ status: 'acknowledged', reviewed_by: null })
+      .eq('id', ABSENCE_REQUEST_ID as string);
+    expect(ack.error, 'officer acknowledge request').toBeNull();
+
+    const deniedPath = `${memberId}/${ABSENCE_REQUEST_ID}/rls-ea-insert-denied.pdf`;
+    const deniedUp = await member.storage
+      .from('excuse-attachments')
+      .upload(deniedPath, new Blob(['x'], { type: 'application/pdf' }), {
+        contentType: 'application/pdf',
+      });
+    expect(
+      deniedUp.error,
+      'upload under an ACKNOWLEDGED request must be denied',
+    ).not.toBeNull();
+
+    // Restore to pending for other cases / re-runnability.
+    await officer
+      .from('absence_requests')
+      .update({ status: 'pending' })
+      .eq('id', ABSENCE_REQUEST_ID as string);
+  });
+
+  // ---- aa_delete + ea_delete_own: delete only while PENDING (AC9) ----
+
+  it('member cannot delete the attachment ROW or its storage OBJECT once not PENDING (AC9)', async () => {
+    // Acknowledge first.
+    await officer
+      .from('absence_requests')
+      .update({ status: 'acknowledged' })
+      .eq('id', ABSENCE_REQUEST_ID as string);
+
+    const rowDel = await member
+      .from('absence_attachments')
+      .delete()
+      .eq('id', ABSENCE_ATTACHMENT_ID as string);
+    // aa_delete USING fails -> no row matched -> no error but nothing deleted.
+    // Confirm the row still exists (owner can still read it).
+    const stillThere = await member
+      .from('absence_attachments')
+      .select('id')
+      .eq('id', ABSENCE_ATTACHMENT_ID as string)
+      .maybeSingle();
+    expect(
+      rowDel.error != null || stillThere.data != null,
+      'attachment row must survive a delete attempt once not pending',
+    ).toBe(true);
+
+    if (seededStoragePath) {
+      const objDel = await member.storage
+        .from('excuse-attachments')
+        .remove([seededStoragePath]);
+      // ea_delete_own requires a pending parent; once acknowledged the delete is
+      // denied (error) or removes nothing. Prove the object is still mintable.
+      const stillMintable = await member.storage
+        .from('excuse-attachments')
+        .createSignedUrl(seededStoragePath, 60);
+      expect(
+        objDel.error != null || stillMintable.error == null,
+        'attachment object must survive a delete attempt once not pending',
+      ).toBe(true);
+    }
+
+    // Restore to pending.
+    await officer
+      .from('absence_requests')
+      .update({ status: 'pending' })
+      .eq('id', ABSENCE_REQUEST_ID as string);
+  });
+
+  // ---- reviewers: any authenticated read/download; non-owner delete denied (AC11/12) ----
+
+  it('any authenticated user can read reviewers; anon cannot (AC11)', async () => {
+    const auth = await member.from('reviewers').select('*').limit(1);
+    expect(auth.error, 'authenticated reviewer read').toBeNull();
+
+    const anonRead = await anon.from('reviewers').select('*').limit(1);
+    expect(
+      anonRead.error != null || (anonRead.data?.length ?? 0) === 0,
+      'anon reviewer read must be denied or empty',
+    ).toBe(true);
+  });
+
+  it('a non-owner cannot delete another user\'s reviewer, except an officer (AC12)', async () => {
+    // member2 uploads a reviewer it owns.
+    const id = crypto.randomUUID();
+    const { data: subjects } = await member2.from('subjects').select('id').limit(1);
+    const subjectId = (subjects as { id: string }[] | null)?.[0]?.id;
+    expect(subjectId, 'a subject should exist to attach a reviewer').toBeTruthy();
+    if (!subjectId) return;
+
+    const path = `${member2Id}/${id}/rls-reviewer.pdf`;
+    const up = await member2.storage
+      .from('reviewers')
+      .upload(path, new Blob(['x'], { type: 'application/pdf' }), {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
+    expect(up.error, 'member2 upload reviewer object').toBeNull();
+    const ins = await member2.from('reviewers').insert({
+      id,
+      uploader_id: member2Id,
+      subject_id: subjectId,
+      title: 'rls-reviewer',
+      storage_path: path,
+      file_name: 'rls-reviewer.pdf',
+      mime_type: 'application/pdf',
+      size_bytes: 1,
+    });
+    expect(ins.error, 'member2 insert reviewer row').toBeNull();
+
+    // The FIRST member (a non-owner) cannot delete it — rv_delete USING fails,
+    // so no row is matched and the row survives.
+    await member.from('reviewers').delete().eq('id', id);
+    const survived = await member2
+      .from('reviewers')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+    expect(survived.data, 'non-owner delete must NOT remove the reviewer').toBeTruthy();
+
+    // An OFFICER can delete it (moderation).
+    const officerDel = await officer.from('reviewers').delete().eq('id', id);
+    expect(officerDel.error, 'officer delete any reviewer').toBeNull();
+    const gone = await member2
+      .from('reviewers')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+    expect(gone.data, 'officer delete removes the reviewer').toBeNull();
+
+    // Clean up the storage object (idempotent).
+    await member2.storage.from('reviewers').remove([path]);
+  });
+
+  // ---- pending-count query (AC10) ----
+
+  it('the officer pending-count query returns the exact count (AC10)', async () => {
+    const { count, error } = await officer
+      .from('absence_requests')
+      .select('*', { head: true, count: 'exact' })
+      .eq('status', 'pending');
+    expect(error, 'officer pending-count query').toBeNull();
+    // The seeded request is pending, so the count is at least 1.
+    expect(count ?? 0).toBeGreaterThanOrEqual(1);
   });
 });

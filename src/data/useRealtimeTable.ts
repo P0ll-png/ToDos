@@ -44,11 +44,18 @@ interface Identified {
  * @param table   the Postgres table name (also the Realtime topic suffix).
  * @param mapRow  maps a raw snake_case row to the camelCase domain shape.
  * @param pollMs  refetch interval while the fallback is active (default 15s).
+ * @param select  the PostgREST select string for the fetch + poll. Defaults to
+ *                '*'. A caller that needs an embedded relationship (e.g.
+ *                reviewers resolving its uploader name) passes a select here;
+ *                the Realtime INSERT payload never carries the embed, so a
+ *                streamed row simply lacks the embedded field until the next
+ *                fetch (focus/poll) fills it in.
  */
 export function useRealtimeTable<Row extends Identified, T extends Identified>(
   table: string,
   mapRow: (row: Row) => T,
   pollMs = 15000,
+  select = '*',
 ): DataHookState<T> {
   // The base hook keys strictly by `id`, both for the row payload and the
   // mapped domain item. It delegates to the keyed engine with id extractors so
@@ -60,6 +67,7 @@ export function useRealtimeTable<Row extends Identified, T extends Identified>(
     (row) => row.id,
     (item) => item.id,
     pollMs,
+    select,
   );
 }
 
@@ -85,6 +93,7 @@ export function useRealtimeTableKeyed<Row, T>(
   keyOfRow: (row: Row) => string | null,
   keyOfItem: (item: T) => string,
   pollMs = 15000,
+  select = '*',
 ): DataHookState<T> {
   const [data, setData] = useState<T[]>([]);
   const [status, setStatus] = useState<DataStatus>('loading');
@@ -106,14 +115,14 @@ export function useRealtimeTableKeyed<Row, T>(
       setStatus('ready');
       return;
     }
-    const { data: rows, error } = await supabase.from(table).select('*');
+    const { data: rows, error } = await supabase.from(table).select(select);
     if (error) {
       setStatus('error');
       return;
     }
     setData((rows as Row[]).map((r) => mapRef.current(r)));
     setStatus('ready');
-  }, [table]);
+  }, [table, select]);
 
   // Initial unconditional fetch + Realtime subscription + fallback poll.
   useEffect(() => {

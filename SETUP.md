@@ -342,6 +342,122 @@ curl -s -X PATCH "$BASE/profiles?id=eq.$TARGET_ID" -H "apikey: $ANON" \
   -d '{"theme_preferences":{"mode":"light","accent":"#FFFFFF"}}'
 ```
 
+### Extension (0003) cases — manual curl
+
+These mirror the automated extension suite
+(`RLS extension boundary — 0003 tables + storage`). Set the extra shell vars
+first (grab the second member's JWT the same way as the others):
+
+```bash
+MEMBER2_JWT=<second member access token>
+MEMBER2_ID=<second member profile id>
+REQ_ID=<a pending absence_requests id owned by the first member>
+ATT_ID=<an absence_attachments id under that request>
+ATT_PATH=<that attachment's storage_path, e.g. $MEMBER_ID/$REQ_ID/cert.pdf>
+STORAGE=https://<ref>.supabase.co/storage/v1
+```
+
+The private tables deny anon entirely (no grant/policy) — anon read is empty,
+anon write is rejected:
+
+```bash
+# anon read task_completions / reviewers (expect [] — no rows, never data)
+curl -s "$BASE/task_completions?select=*&limit=1" -H "apikey: $ANON"
+curl -s "$BASE/reviewers?select=*&limit=1" -H "apikey: $ANON"
+```
+
+Member event insert rejected; officer event insert allowed (AC1/AC2):
+
+```bash
+curl -s -X POST "$BASE/events" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"type":"quiz","title":"forged","event_date":"2099-01-01"}'   # denied
+curl -s -X POST "$BASE/events" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
+  -d '{"type":"quiz","title":"ok","event_date":"2099-01-01"}'       # allowed
+```
+
+Member completion is self-only (AC3 — a cross-user `user_id` fails the WITH
+CHECK; `tasks.status` is a different table and is never touched):
+
+```bash
+# own-row insert (expect 2xx)
+curl -s -X POST "$BASE/task_completions" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"user_id":"'$MEMBER_ID'","task_id":"<any task id>"}'
+# cross-user insert (expect denied)
+curl -s -X POST "$BASE/task_completions" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT" -H "Content-Type: application/json" \
+  -d '{"user_id":"'$MEMBER2_ID'","task_id":"<any task id>"}'
+```
+
+Absence privacy (AC7) — the second member sees neither the request nor the
+attachment row, and cannot mint the file's signed URL; the officer reads all:
+
+```bash
+# owner reads own request (expect the row); member2 reads it (expect [])
+curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT"
+curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER2_JWT"            # expect []
+# member2 reads the attachment row (expect []); officer reads it (expect the row)
+curl -s "$BASE/absence_attachments?id=eq.$ATT_ID&select=*" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER2_JWT"            # expect []
+curl -s "$BASE/absence_attachments?id=eq.$ATT_ID&select=*" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT"
+# member2 mints a signed URL on the guessed path (expect an error, not a URL)
+curl -s -X POST "$STORAGE/object/sign/excuse-attachments/$ATT_PATH" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $MEMBER2_JWT" \
+  -H "Content-Type: application/json" -d '{"expiresIn":60}'
+```
+
+Attachment storage INSERT gate (`ea_insert`) — denied under another member's
+folder, a non-existent request, or an acknowledged own request; allowed only
+under a still-pending own request:
+
+```bash
+# under member2's folder (expect denied)
+curl -s -X POST "$STORAGE/object/excuse-attachments/$MEMBER2_ID/$REQ_ID/x.pdf" \
+  -H "apikey: $ANON" -H "Authorization: Bearer $MEMBER_JWT" \
+  -F file=@cert.pdf
+```
+
+Edit/delete only while pending (AC9) — acknowledge the request as the officer,
+then confirm the member can no longer delete the attachment row or object; the
+pending-count query returns the live count (AC10):
+
+```bash
+curl -s -X PATCH "$BASE/absence_requests?id=eq.$REQ_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
+  -d '{"status":"acknowledged"}'
+# member delete the attachment row now (expect nothing deleted — USING fails)
+curl -s -X DELETE "$BASE/absence_attachments?id=eq.$ATT_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT"
+# restore to pending afterwards
+curl -s -X PATCH "$BASE/absence_requests?id=eq.$REQ_ID" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
+  -d '{"status":"pending"}'
+# officer pending-count (exact; expect Content-Range to carry the count)
+curl -s -I "$BASE/absence_requests?status=eq.pending&select=id" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT" -H "Prefer: count=exact"
+```
+
+Reviewers (AC11/AC12) — any signed-in user downloads; anon cannot; a non-owner
+cannot delete another's reviewer, but an officer can:
+
+```bash
+# authenticated read (expect rows); anon read (expect [])
+curl -s "$BASE/reviewers?select=*&limit=1" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT"
+curl -s "$BASE/reviewers?select=*&limit=1" -H "apikey: $ANON"   # expect []
+# first member (non-owner) deletes member2's reviewer (expect nothing deleted);
+# officer deletes it (expect 2xx)
+curl -s -X DELETE "$BASE/reviewers?id=eq.<member2 reviewer id>" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $MEMBER_JWT"
+curl -s -X DELETE "$BASE/reviewers?id=eq.<member2 reviewer id>" -H "apikey: $ANON" \
+  -H "Authorization: Bearer $OFFICER_JWT"
+```
+
 ## Local development
 
 ```

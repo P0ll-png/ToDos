@@ -428,6 +428,101 @@ export async function deleteAbsenceRequest(id: string): Promise<MutationResult> 
   return error ? { ok: false, error: classify(error) } : { ok: true };
 }
 
+// ============ reviewers (shared study files; RLS is the sole gate) ============
+
+interface CreateReviewerInput {
+  uploaderId: string;
+  subjectId: string;
+  title: string;
+  description?: string;
+  path: string; // {uploader_id}/{id}/{safeName}, built BEFORE upload
+  id: string; // crypto.randomUUID() generated BEFORE upload (design)
+  file: File;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/**
+ * createReviewer — orphan-safe upload-then-insert for a shared reviewer.
+ *
+ * Ordering (design Data layer → createReviewer): the row `id` is generated
+ * client-side BEFORE the upload and the path is `{uploader_id}/{id}/{safeName}`
+ * (buildStoragePath), so the object is deterministically locatable from the row.
+ *   1. upload the file to the 'reviewers' bucket;
+ *   2. if the upload fails, insert NOTHING;
+ *   3. insert the row WITH that explicit id + storage_path (rv_insert requires
+ *      uploader_id = auth.uid());
+ *   4. if the insert fails AFTER a successful upload, remove the just-uploaded
+ *      object so no orphan is left (the row's absence makes the path otherwise
+ *      unreconstructable).
+ *
+ * RLS (rv_insert + rv_obj_insert own-folder) is the real gate; no client role
+ * check. A member/anon with a forged uploader_id is denied by WITH CHECK.
+ */
+export async function createReviewer(
+  input: CreateReviewerInput,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+
+  const upload = await supabase.storage
+    .from('reviewers')
+    .upload(input.path, input.file, { contentType: input.mimeType });
+  if (upload.error) {
+    return { ok: false, error: classify(upload.error as { message?: string }) };
+  }
+
+  const { error } = await supabase.from('reviewers').insert({
+    id: input.id,
+    uploader_id: input.uploaderId,
+    subject_id: input.subjectId,
+    title: input.title,
+    description: input.description ?? null,
+    storage_path: input.path,
+    file_name: input.fileName,
+    mime_type: input.mimeType,
+    size_bytes: input.sizeBytes,
+  });
+  if (error) {
+    // Insert failed after a successful upload — clean up the orphaned object so
+    // no file is left behind with no row to reconstruct its path. Best-effort:
+    // the row-insert error is the one surfaced to the user.
+    await supabase.storage.from('reviewers').remove([input.path]);
+    return { ok: false, error: classify(error) };
+  }
+  return { ok: true };
+}
+
+/**
+ * deleteReviewer — orphan-safe delete-object-then-row (design Data layer →
+ * deleteReviewer). The storage object is removed FIRST so a storage failure
+ * aborts BEFORE the row is deleted — leaving the card in the UI for a retry
+ * rather than an orphaned-but-still-mintable file with no row to locate it. A
+ * storage "not found" is treated as success (idempotent) so a half-completed
+ * prior delete can still be cleaned up. RLS (rv_delete owner-or-officer +
+ * rv_obj_delete) is the real authorization gate for both steps; the UI's
+ * owner/officer check is convenience only.
+ */
+export async function deleteReviewer(
+  id: string,
+  storagePath: string,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+
+  const removal = await supabase.storage.from('reviewers').remove([storagePath]);
+  if (removal.error) {
+    const message = (removal.error as { message?: string }).message ?? '';
+    // Idempotent: a missing object is not a failure (a prior delete may have
+    // already removed it). Any other storage error aborts before the row.
+    if (!/not.?found/i.test(message)) {
+      return { ok: false, error: classify(removal.error as { message?: string }) };
+    }
+  }
+
+  const { error } = await supabase.from('reviewers').delete().eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
 // ============ signed URLs (private buckets; mint on demand per click) ============
 
 export type SignedUrlError = 'not-configured' | 'denied' | 'network';
