@@ -7,21 +7,89 @@
  * clears selection; here we also render the no-selection state defensively.
  */
 import { useMemo } from 'react';
-import type { Subject, Task } from '../lib/types';
+import type { CalendarItem, EventType, Subject, Task } from '../lib/types';
 import { isOverdue, formatDeadline } from '../lib/derive';
 import { sortByDeadline } from '../lib/sorting';
+import { EventBadge } from './EventBadge';
 
 interface DetailsPanelProps {
   subjects: Subject[];
   tasks: Task[];
   selectedSubjectId: string | null;
+  /**
+   * Month-calendar day mode (optional). When selectedDay is set, the panel
+   * lists that day's merged items (dayItems) instead of the selected subject's
+   * pending tasks. The weekly view leaves these undefined and keeps the
+   * original subject-details behavior unchanged.
+   */
+  selectedDay?: string | null;
+  dayItems?: CalendarItem[];
 }
 
 export function DetailsPanel({
   subjects,
   tasks,
   selectedSubjectId,
+  selectedDay = null,
+  dayItems = [],
 }: DetailsPanelProps) {
+  // Month-calendar day mode takes precedence when a day is selected.
+  if (selectedDay !== null) {
+    return (
+      <section aria-label="Day details" className="card" style={sectionStyle}>
+        <h2 style={headingStyle}>{selectedDay}</h2>
+        {dayItems.length === 0 ? (
+          <p className="muted" style={{ color: 'var(--muted)' }}>
+            Nothing scheduled for this day.
+          </p>
+        ) : (
+          <ul style={listStyle}>
+            {dayItems.map((item) => (
+              <li key={`${item.kind}:${item.id}`} style={itemStyle}>
+                <div style={titleRowStyle}>
+                  {item.kind === 'event' ? (
+                    <EventBadge type={item.type as EventType} />
+                  ) : null}
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      ...(item.kind === 'task' && item.done
+                        ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+                        : null),
+                    }}
+                  >
+                    {item.title}
+                    {item.kind === 'task' && item.done && (
+                      <span className="sr-only"> (done)</span>
+                    )}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <DetailsPanelSubject
+      subjects={subjects}
+      tasks={tasks}
+      selectedSubjectId={selectedSubjectId}
+    />
+  );
+}
+
+function DetailsPanelSubject({
+  subjects,
+  tasks,
+  selectedSubjectId,
+}: {
+  subjects: Subject[];
+  tasks: Task[];
+  selectedSubjectId: string | null;
+}) {
   const subject = useMemo(
     () => subjects.find((s) => s.id === selectedSubjectId) ?? null,
     [subjects, selectedSubjectId],

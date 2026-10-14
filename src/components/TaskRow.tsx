@@ -1,9 +1,16 @@
 /**
  * TaskRow — one row of the full class to-do list: "Subject - Task" plus date
- * given and deadline. Overdue pending rows are flagged with --danger. The
- * remove button and status toggle render ONLY for officers; members and
- * anonymous visitors see neither. This is UI convenience only — the DB rejects
- * forged writes regardless (RLS is_officer()).
+ * given and deadline. Overdue pending rows are flagged with --danger.
+ *
+ * Personal tracker (FR-2.6): when the viewer is signed in, a leading checkbox
+ * reflects whether THEY have marked the task done (completedTaskIds.has). A
+ * completed row is dimmed (--task-done) and struck through, with the checkbox
+ * state and an sr-only "(done)" so completion is never color-only. The checkbox
+ * writes ONLY the per-user task_completions table — never tasks.status. Anon
+ * visitors see no checkbox.
+ *
+ * The officer remove button and class-status toggle render ONLY for officers.
+ * This is UI convenience only — the DB rejects forged writes regardless (RLS).
  */
 import type { Subject, Task } from '../lib/types';
 import { isOverdue, formatDeadline } from '../lib/derive';
@@ -15,6 +22,12 @@ interface TaskRowProps {
   busy: boolean;
   onToggleStatus: (task: Task) => void;
   onRemove: (task: Task) => void;
+  /** Null when signed out: no personal checkbox is rendered. */
+  signedIn: boolean;
+  /** Whether the viewer has marked this task done for themselves. */
+  completedForMe: boolean;
+  /** Toggle the viewer's own completion (optimistic). */
+  onToggleCompletion: (task: Task, next: boolean) => void;
 }
 
 export function TaskRow({
@@ -24,10 +37,13 @@ export function TaskRow({
   busy,
   onToggleStatus,
   onRemove,
+  signedIn,
+  completedForMe,
+  onToggleCompletion,
 }: TaskRowProps) {
   const overdue = isOverdue(task);
   const subjectName = subject?.name ?? 'Unknown subject';
-  const done = task.status === 'done';
+  const classDone = task.status === 'done';
 
   return (
     <li
@@ -36,13 +52,32 @@ export function TaskRow({
         border: `1px solid ${overdue ? 'var(--danger)' : 'var(--border)'}`,
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      {signedIn && (
+        <input
+          type="checkbox"
+          checked={completedForMe}
+          onChange={(e) => onToggleCompletion(task, e.target.checked)}
+          aria-label={`Mark ${subjectName} - ${task.title} done for me`}
+          style={checkboxStyle}
+        />
+      )}
+
+      <div
+        style={{
+          minWidth: 0,
+          flex: 1,
+          ...(completedForMe
+            ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+            : null),
+        }}
+      >
         <div style={titleRowStyle}>
           <span style={{ fontWeight: 600 }}>
             {subjectName} - {task.title}
           </span>
+          {completedForMe && <span className="sr-only"> (done)</span>}
           {overdue && <span style={overdueBadgeStyle}>Overdue</span>}
-          {done && (
+          {classDone && (
             <span className="muted" style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>
               Done
             </span>
@@ -65,7 +100,7 @@ export function TaskRow({
             disabled={busy}
             style={secondaryButtonStyle}
           >
-            {done ? 'Reopen' : 'Mark done'}
+            {classDone ? 'Reopen' : 'Mark done'}
           </button>
           <button
             type="button"
@@ -90,6 +125,14 @@ const rowStyle: React.CSSProperties = {
   padding: '0.625rem 0.75rem',
   borderRadius: 'calc(var(--radius) - 4px)',
   background: 'var(--surface-2)',
+};
+
+const checkboxStyle: React.CSSProperties = {
+  flexShrink: 0,
+  width: '1.1rem',
+  height: '1.1rem',
+  marginTop: '0.15rem',
+  accentColor: 'var(--accent)',
 };
 
 const titleRowStyle: React.CSSProperties = {

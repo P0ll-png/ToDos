@@ -1,34 +1,53 @@
 /**
- * Layout — owns the selectedSubjectId state and the desktop 70% / 30% grid. The
- * left column stacks ScheduleGrid over DetailsPanel; the right column is the
- * TaskList. It wires the three data hooks and the Header.
+ * Layout — owns the board state and the desktop 70% / 30% grid. The left column
+ * stacks a view toggle over either the ScheduleGrid (weekly) or the
+ * MonthCalendar (month), then the DetailsPanel; the right column is the
+ * TaskList. It wires the data hooks (subjects, slots, tasks, events) and the
+ * per-account completion hook, and the Header.
  *
- * Selection is passed to ScheduleGrid (highlight) and DetailsPanel (filter). If
- * the selected subject disappears from the live subjects array (an officer
- * deleted it via Realtime), selection is cleared.
+ * Subject selection drives the weekly ScheduleGrid highlight + DetailsPanel. In
+ * month view a selected DAY drives the DetailsPanel instead (its items are the
+ * merged tasks+events for that day). If the selected subject disappears from
+ * the live subjects array (an officer deleted it via Realtime), selection is
+ * cleared.
  *
  * Layout classes live in base.css: .board-main is the desktop 70%/30% grid
  * which collapses to a single column at <=860px, stacking schedule -> details
  * -> list (the natural DOM order). The ScheduleGrid scrolls horizontally on its
  * own so the page never overflows on mobile.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSubjects } from '../data/useSubjects';
 import { useScheduleSlots } from '../data/useScheduleSlots';
 import { useTasks } from '../data/useTasks';
+import { useEvents } from '../data/useEvents';
+import { useTaskCompletions } from '../data/useTaskCompletions';
+import { useSession } from '../context/SessionProvider';
+import { mergeCalendarItems } from '../lib/calendar';
+import { localTodayISO } from '../lib/derive';
 import { Header } from './Header';
+import { BoardViewToggle, type BoardView } from './BoardViewToggle';
 import { ScheduleGrid } from './ScheduleGrid';
+import { MonthCalendar } from './MonthCalendar';
 import { DetailsPanel } from './DetailsPanel';
 import { TaskList } from './TaskList';
 
 export function Layout() {
+  const { session } = useSession();
   const subjectsState = useSubjects();
   const slotsState = useScheduleSlots();
   const tasksState = useTasks();
+  const eventsState = useEvents();
+  const completions = useTaskCompletions();
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(
     null,
   );
+  const [view, setView] = useState<BoardView>('weekly');
+  const now = new Date();
+  const [monthYear, setMonthYear] = useState(now.getFullYear());
+  const [month0, setMonth0] = useState(now.getMonth());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // Clear selection if the selected subject is gone (deleted via Realtime).
   const subjects = subjectsState.data;
@@ -41,15 +60,51 @@ export function Layout() {
     }
   }, [subjects, selectedSubjectId]);
 
+  const signedIn = session != null;
+  const completedTaskIds = completions.completedTaskIds;
+  const viewer = useMemo(
+    () => (signedIn ? { signedIn: true, completedTaskIds } : null),
+    [signedIn, completedTaskIds],
+  );
+
+  // The merged items for the selected day (month view DetailsPanel).
+  const dayItems = useMemo(() => {
+    if (view !== 'month' || selectedDay == null) return [];
+    return mergeCalendarItems(
+      tasksState.data,
+      eventsState.data,
+      completedTaskIds,
+    ).filter((item) => item.datePart === selectedDay);
+  }, [view, selectedDay, tasksState.data, eventsState.data, completedTaskIds]);
+
   const anyError =
     subjectsState.status === 'error' ||
     slotsState.status === 'error' ||
-    tasksState.status === 'error';
+    tasksState.status === 'error' ||
+    eventsState.status === 'error';
 
   function retryAll() {
     subjectsState.retry();
     slotsState.retry();
     tasksState.retry();
+    eventsState.retry();
+  }
+
+  function handleChangeMonth(y: number, m0: number) {
+    setMonthYear(y);
+    setMonth0(m0);
+  }
+
+  function handleSwitchView(next: BoardView) {
+    setView(next);
+    // Default the month view to today's month and select today for a useful
+    // first render.
+    if (next === 'month') {
+      const t = new Date();
+      setMonthYear(t.getFullYear());
+      setMonth0(t.getMonth());
+      setSelectedDay(localTodayISO(t));
+    }
   }
 
   return (
@@ -67,21 +122,46 @@ export function Layout() {
 
       <main className="board-main">
         <div className="board-left">
-          <ScheduleGrid
-            subjects={subjects}
-            slots={slotsState.data}
-            tasks={tasksState.data}
-            selectedSubjectId={selectedSubjectId}
-            onSelectSubject={setSelectedSubjectId}
-          />
+          <BoardViewToggle view={view} onChange={handleSwitchView} />
+          {view === 'weekly' ? (
+            <ScheduleGrid
+              subjects={subjects}
+              slots={slotsState.data}
+              tasks={tasksState.data}
+              events={eventsState.data}
+              viewer={viewer}
+              selectedSubjectId={selectedSubjectId}
+              onSelectSubject={setSelectedSubjectId}
+            />
+          ) : (
+            <MonthCalendar
+              tasks={tasksState.data}
+              events={eventsState.data}
+              completedTaskIds={completedTaskIds}
+              year={monthYear}
+              month0={month0}
+              onChangeMonth={handleChangeMonth}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+            />
+          )}
           <DetailsPanel
             subjects={subjects}
             tasks={tasksState.data}
             selectedSubjectId={selectedSubjectId}
+            selectedDay={view === 'month' ? selectedDay : null}
+            dayItems={dayItems}
           />
         </div>
         <div className="board-right">
-          <TaskList subjects={subjects} tasks={tasksState.data} />
+          <TaskList
+            subjects={subjects}
+            tasks={tasksState.data}
+            events={eventsState.data}
+            completedTaskIds={completedTaskIds}
+            onAddLocalCompletion={completions.addLocal}
+            onRemoveLocalCompletion={completions.removeLocal}
+          />
         </div>
       </main>
     </div>

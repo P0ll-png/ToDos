@@ -1,37 +1,70 @@
 /**
- * TaskList — the full class to-do list on the right column. Every row is
- * "Subject - Task" + date given + deadline, sorted nearest-deadline-first with
- * null deadlines last (sorting.ts over ALL tasks). Overdue pending rows are
- * flagged. Officers get an "Add task" button (opens AddTaskDialog) and per-row
- * remove + status controls; members and anonymous visitors get none of them.
- * The DB rejects forged writes regardless of what the UI shows.
+ * TaskList — the full class to-do list on the right column, now a MERGED list
+ * of tasks and events. Tasks and events are normalized through the shared
+ * CalendarItem shape (calendar.ts) and sorted by the single explicit order
+ * (datePart asc, then kind tasks-before-events, then startTime asc nulls-last,
+ * then title). Each row renders by kind: a TaskRow or an EventRow. The React
+ * key is `${kind}:${id}` so the renderer can branch unambiguously.
  *
- * No optimistic UI: a mutation that succeeds reconciles via Realtime; a denial
- * or network error surfaces an inline message and leaves state untouched.
+ * Officers get "Add task" and "Add Event" buttons plus per-row remove/status
+ * controls; members and anonymous visitors get none of them. The DB rejects
+ * forged writes regardless of what the UI shows.
+ *
+ * Personal tracker (signed-in only): each task row has a per-user completion
+ * checkbox (optimistic markTaskDone/unmarkTaskDone), and a segmented filter
+ * (All / My unfinished / My finished) narrows the task rows by the viewer's own
+ * completion set. The filter never affects events — they always show.
+ *
+ * No optimistic UI for class writes: a successful mutation reconciles via
+ * Realtime; a denial or network error surfaces inline and leaves state
+ * untouched. The ONE optimistic exception is the personal completion toggle.
  */
 import { useMemo, useState } from 'react';
-import type { Subject, Task } from '../lib/types';
+import type { CalendarItem, EventItem, Subject, Task } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
-import { sortByDeadline } from '../lib/sorting';
+import { mergeCalendarItems } from '../lib/calendar';
 import {
   MUTATION_MESSAGES,
+  markTaskDone,
+  removeEvent,
   removeTask,
   setTaskStatus,
+  unmarkTaskDone,
 } from '../data/mutations';
 import { AddTaskDialog } from './AddTaskDialog';
+import { AddEventDialog } from './AddEventDialog';
 import { TaskRow } from './TaskRow';
+import { EventRow } from './EventRow';
 import { Modal } from './Modal';
+
+type CompletionFilter = 'all' | 'unfinished' | 'finished';
 
 interface TaskListProps {
   subjects: Subject[];
   tasks: Task[];
+  events: EventItem[];
+  /** The signed-in viewer's own completed task ids (empty when signed out). */
+  completedTaskIds: Set<string>;
+  /** Optimistically add/remove a task id in the parent completion set. */
+  onAddLocalCompletion: (taskId: string) => void;
+  onRemoveLocalCompletion: (taskId: string) => void;
 }
 
-export function TaskList({ subjects, tasks }: TaskListProps) {
-  const { isOfficer } = useSession();
-  const [showAdd, setShowAdd] = useState(false);
+export function TaskList({
+  subjects,
+  tasks,
+  events,
+  completedTaskIds,
+  onAddLocalCompletion,
+  onRemoveLocalCompletion,
+}: TaskListProps) {
+  const { isOfficer, session, profile } = useSession();
+  const signedIn = session != null;
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddEvent, setShowAddEvent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CompletionFilter>('all');
 
   const subjectById = useMemo(() => {
     const map = new Map<string, Subject>();
@@ -39,7 +72,32 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
     return map;
   }, [subjects]);
 
-  const sorted = useMemo(() => sortByDeadline(tasks), [tasks]);
+  const taskById = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const t of tasks) map.set(t.id, t);
+    return map;
+  }, [tasks]);
+
+  const eventById = useMemo(() => {
+    const map = new Map<string, EventItem>();
+    for (const e of events) map.set(e.id, e);
+    return map;
+  }, [events]);
+
+  const merged = useMemo(
+    () => mergeCalendarItems(tasks, events, completedTaskIds),
+    [tasks, events, completedTaskIds],
+  );
+
+  // The completion filter narrows TASK items only; events always pass.
+  const visible = useMemo(() => {
+    if (!signedIn || filter === 'all') return merged;
+    return merged.filter((item) => {
+      if (item.kind !== 'task') return true;
+      const done = completedTaskIds.has(item.id);
+      return filter === 'finished' ? done : !done;
+    });
+  }, [merged, filter, signedIn, completedTaskIds]);
 
   async function handleToggleStatus(task: Task) {
     if (busy) return;
@@ -53,7 +111,7 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
     setBusy(false);
   }
 
-  async function handleRemove(task: Task) {
+  async function handleRemoveTask(task: Task) {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -62,20 +120,116 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
     setBusy(false);
   }
 
+  async function handleRemoveEvent(event: EventItem) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await removeEvent(event.id);
+    if (!result.ok && result.error) setError(MUTATION_MESSAGES[result.error]);
+    setBusy(false);
+  }
+
+  // The ONE optimistic path: flip the local set first, then write, revert on
+  // error. Realtime reconcile is idempotent on the set and is the truth.
+  async function handleToggleCompletion(task: Task, next: boolean) {
+    const uid = profile?.id ?? session?.user.id ?? null;
+    if (!uid) return;
+    if (next) onAddLocalCompletion(task.id);
+    else onRemoveLocalCompletion(task.id);
+    setError(null);
+    const result = next
+      ? await markTaskDone(task.id, uid)
+      : await unmarkTaskDone(task.id, uid);
+    if (!result.ok) {
+      // Revert the optimistic change.
+      if (next) onRemoveLocalCompletion(task.id);
+      else onAddLocalCompletion(task.id);
+      if (result.error) setError(MUTATION_MESSAGES[result.error]);
+    }
+  }
+
+  function renderItem(item: CalendarItem) {
+    if (item.kind === 'task') {
+      const task = taskById.get(item.id);
+      if (!task) return null;
+      return (
+        <TaskRow
+          key={`task:${task.id}`}
+          task={task}
+          subject={subjectById.get(task.subjectId)}
+          isOfficer={isOfficer}
+          busy={busy}
+          onToggleStatus={handleToggleStatus}
+          onRemove={handleRemoveTask}
+          signedIn={signedIn}
+          completedForMe={completedTaskIds.has(task.id)}
+          onToggleCompletion={handleToggleCompletion}
+        />
+      );
+    }
+    const event = eventById.get(item.id);
+    if (!event) return null;
+    return (
+      <EventRow
+        key={`event:${event.id}`}
+        event={event}
+        subject={event.subjectId ? subjectById.get(event.subjectId) : undefined}
+        isOfficer={isOfficer}
+        busy={busy}
+        onRemove={handleRemoveEvent}
+      />
+    );
+  }
+
   return (
     <section aria-label="Class to-do list" className="card" style={sectionStyle}>
       <div style={headerRowStyle}>
         <h2 style={headingStyle}>To-do list</h2>
         {isOfficer && (
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            style={accentButtonStyle}
-          >
-            Add task
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => setShowAddTask(true)}
+              style={accentButtonStyle}
+            >
+              Add task
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddEvent(true)}
+              style={secondaryButtonStyle}
+            >
+              Add Event
+            </button>
+          </div>
         )}
       </div>
+
+      {signedIn && (
+        <div
+          role="group"
+          aria-label="Filter my tasks"
+          style={filterRowStyle}
+        >
+          {(
+            [
+              ['all', 'All'],
+              ['unfinished', 'My unfinished'],
+              ['finished', 'My finished'],
+            ] as [CompletionFilter, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              aria-pressed={filter === value}
+              style={filter === value ? segActiveStyle : segStyle}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <p role="alert" style={{ color: 'var(--danger)', margin: '0 0 0.75rem' }}>
@@ -83,29 +237,22 @@ export function TaskList({ subjects, tasks }: TaskListProps) {
         </p>
       )}
 
-      {sorted.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="muted" style={{ color: 'var(--muted)' }}>
-          No tasks yet.
+          {merged.length === 0 ? 'No tasks or events yet.' : 'Nothing matches this filter.'}
         </p>
       ) : (
-        <ul style={listStyle}>
-          {sorted.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              subject={subjectById.get(task.subjectId)}
-              isOfficer={isOfficer}
-              busy={busy}
-              onToggleStatus={handleToggleStatus}
-              onRemove={handleRemove}
-            />
-          ))}
-        </ul>
+        <ul style={listStyle}>{visible.map(renderItem)}</ul>
       )}
 
-      {showAdd && (
-        <Modal onClose={() => setShowAdd(false)}>
-          <AddTaskDialog subjects={subjects} onClose={() => setShowAdd(false)} />
+      {showAddTask && (
+        <Modal onClose={() => setShowAddTask(false)}>
+          <AddTaskDialog subjects={subjects} onClose={() => setShowAddTask(false)} />
+        </Modal>
+      )}
+      {showAddEvent && (
+        <Modal onClose={() => setShowAddEvent(false)}>
+          <AddEventDialog subjects={subjects} onClose={() => setShowAddEvent(false)} />
         </Modal>
       )}
     </section>
@@ -130,6 +277,13 @@ const headingStyle: React.CSSProperties = {
   margin: 0,
 };
 
+const filterRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '0.25rem',
+  marginBottom: '0.75rem',
+  flexWrap: 'wrap',
+};
+
 const listStyle: React.CSSProperties = {
   listStyle: 'none',
   margin: 0,
@@ -146,4 +300,30 @@ const accentButtonStyle: React.CSSProperties = {
   border: '1px solid var(--accent)',
   borderRadius: 'calc(var(--radius) - 4px)',
   fontWeight: 500,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  padding: '0.375rem 0.75rem',
+  background: 'var(--surface)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'calc(var(--radius) - 4px)',
+  fontWeight: 500,
+};
+
+const segStyle: React.CSSProperties = {
+  padding: '0.25rem 0.625rem',
+  background: 'var(--surface)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'calc(var(--radius) - 6px)',
+  fontSize: '0.8125rem',
+  fontWeight: 500,
+};
+
+const segActiveStyle: React.CSSProperties = {
+  ...segStyle,
+  background: 'var(--accent)',
+  color: 'var(--accent-contrast)',
+  borderColor: 'var(--accent)',
 };

@@ -2,14 +2,17 @@
  * ScheduleGrid — the weekly class schedule. Columns are Mon–Sat (day 1..6);
  * rows are the distinct time blocks derived from schedule_slots start/end.
  * Each occupied slot renders a ScheduleCell (a real <button>). Glow is DERIVED
- * from the live tasks array via subjectHasPending — never stored.
+ * from the live tasks array via subjectGlows (viewer-dependent) — never stored.
+ * A distinct corner marker flags an upcoming assessment within 7 days
+ * (hasUpcomingAssessment over the live events array).
  *
  * Zero-slots empty state is first-class because the user seeds subjects/slots
  * directly in Supabase.
  */
 import { useMemo } from 'react';
-import type { ScheduleSlot, Subject, Task } from '../lib/types';
-import { subjectHasPending } from '../lib/derive';
+import type { EventItem, ScheduleSlot, Subject, Task } from '../lib/types';
+import { subjectGlows } from '../lib/derive';
+import { hasUpcomingAssessment } from '../lib/events';
 import { ScheduleCell } from './ScheduleCell';
 
 const DAYS: { day: number; label: string }[] = [
@@ -25,6 +28,13 @@ interface ScheduleGridProps {
   subjects: Subject[];
   slots: ScheduleSlot[];
   tasks: Task[];
+  events: EventItem[];
+  /**
+   * The glow is viewer-dependent (subjectGlows): signed-in viewers glow on an
+   * unfinished-for-them pending task; signed-out visitors glow on any pending.
+   * Null means signed out.
+   */
+  viewer: { signedIn: boolean; completedTaskIds: Set<string> } | null;
   selectedSubjectId: string | null;
   onSelectSubject: (subjectId: string) => void;
 }
@@ -38,6 +48,8 @@ export function ScheduleGrid({
   subjects,
   slots,
   tasks,
+  events,
+  viewer,
   selectedSubjectId,
   onSelectSubject,
 }: ScheduleGridProps) {
@@ -125,7 +137,8 @@ export function ScheduleGrid({
                         {subject ? (
                           <ScheduleCell
                             subject={subject}
-                            pending={subjectHasPending(subject.id, tasks)}
+                            pending={subjectGlows(subject.id, tasks, viewer)}
+                            assessment={hasUpcomingAssessment(subject.id, events)}
                             selected={subject.id === selectedSubjectId}
                             onSelect={onSelectSubject}
                           />

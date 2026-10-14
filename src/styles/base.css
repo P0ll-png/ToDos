@@ -242,6 +242,25 @@ button {
   }
 }
 
+/*
+ * Month calendar day cells. Desktop shows up to 3 item chips (+N more); on a
+ * narrow screen (<=640px) the chip stack is swapped for one dot per item (CSS
+ * only, no JS), and the tapped day's full list appears in the DetailsPanel
+ * below the grid. Mon-first 7-column layout is set inline in MonthCalendar.
+ */
+.mc-dots {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .mc-chips {
+    display: none;
+  }
+  .mc-dots {
+    display: flex;
+  }
+}
+
 /* Visually hidden but available to assistive tech. */
 .sr-only {
   position: absolute;

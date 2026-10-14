@@ -3,10 +3,9 @@
  * schedule grid. Keyboard-focusable with the global :focus-visible ring
  * (--focus-ring). Clicking it selects the subject.
  *
- * Glow is DERIVED (never stored): when the subject has >= 1 pending task
- * (`pending` prop, computed by the grid via subjectHasPending over the live
- * tasks array) the cell shows an amber border + soft box-shadow halo AND a
- * ringed dot badge.
+ * Glow is DERIVED (never stored): the `pending` prop is computed by the grid
+ * via subjectGlows (viewer-dependent) over the live tasks array; when set the
+ * cell shows an amber border + soft box-shadow halo AND a ringed dot badge.
  *
  * Fix #6 — the glow halo uses --accent-weak (~22% alpha of the accent) and is
  * purely COSMETIC: it is NOT the accessibility signal, so no contrast check is
@@ -21,6 +20,13 @@ import type { Subject } from '../lib/types';
 interface ScheduleCellProps {
   subject: Subject;
   pending: boolean;
+  /**
+   * True when the subject has a quiz/exam/presentation within 7 days
+   * (hasUpcomingAssessment). Rendered as a corner marker DISTINCT in shape,
+   * icon, and token (--assess-badge) from the round pending dot, with its own
+   * sr-only label, so it never reads as the pending glow (FR-1.9).
+   */
+  assessment?: boolean;
   selected: boolean;
   onSelect: (subjectId: string) => void;
 }
@@ -28,6 +34,7 @@ interface ScheduleCellProps {
 export function ScheduleCell({
   subject,
   pending,
+  assessment = false,
   selected,
   onSelect,
 }: ScheduleCellProps) {
@@ -71,6 +78,40 @@ export function ScheduleCell({
           }}
         />
       )}
+      {assessment && (
+        <span
+          // A triangular warning marker in --assess-badge — a different SHAPE
+          // (triangle, not a round dot), icon, and token, placed in the opposite
+          // (bottom-right) corner so it never reads as the pending glow.
+          aria-hidden="true"
+          data-testid="assessment-badge"
+          style={{
+            position: 'absolute',
+            bottom: '0.375rem',
+            right: '0.375rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: 0,
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="var(--assess-badge)"
+            stroke="var(--assess-badge-fg)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            focusable="false"
+          >
+            <path d="M12 2 2 21h20L12 2z" />
+            <line x1="12" y1="9" x2="12" y2="14" stroke="var(--assess-badge-fg)" />
+            <line x1="12" y1="18" x2="12" y2="18" stroke="var(--assess-badge-fg)" />
+          </svg>
+        </span>
+      )}
       <span style={{ display: 'block' }}>{subject.name}</span>
       {subject.room && (
         <span
@@ -81,6 +122,7 @@ export function ScheduleCell({
         </span>
       )}
       {pending && <span className="sr-only"> (has pending tasks)</span>}
+      {assessment && <span className="sr-only"> (assessment within 7 days)</span>}
     </button>
   );
 }

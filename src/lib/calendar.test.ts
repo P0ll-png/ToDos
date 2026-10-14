@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   buildMonthGrid,
   bucketItemsByDay,
+  compareCalendarItems,
+  mergeCalendarItems,
   visibleWithOverflow,
 } from './calendar';
-import type { CalendarItem } from './types';
+import type { CalendarItem, EventItem, Task } from './types';
 
 function item(partial: Partial<CalendarItem> & { id: string }): CalendarItem {
   return {
@@ -98,5 +100,86 @@ describe('visibleWithOverflow', () => {
     const { shown, moreCount } = visibleWithOverflow(make(4));
     expect(shown).toHaveLength(3);
     expect(moreCount).toBe(1);
+  });
+});
+
+function task(partial: Partial<Task> & { id: string }): Task {
+  return {
+    id: partial.id,
+    subjectId: partial.subjectId ?? 'math',
+    title: partial.title ?? 'Task',
+    notes: '',
+    givenDate: '2025-06-01',
+    deadline: partial.deadline ?? '2025-06-10T12:00:00Z',
+    createdBy: null,
+    status: partial.status ?? 'pending',
+  };
+}
+
+function event(partial: Partial<EventItem> & { id: string }): EventItem {
+  return {
+    id: partial.id,
+    title: partial.title ?? 'Event',
+    type: partial.type ?? 'exam',
+    subjectId: partial.subjectId ?? 'math',
+    eventDate: partial.eventDate ?? '2025-06-12',
+    startTime: partial.startTime ?? null,
+    endTime: partial.endTime ?? null,
+    location: '',
+    notes: '',
+    createdBy: null,
+  };
+}
+
+describe('mergeCalendarItems', () => {
+  it('normalizes a task onto its deadline date part and marks done from the set', () => {
+    const items = mergeCalendarItems(
+      [task({ id: 't1', deadline: '2025-06-10T12:00:00Z' })],
+      [],
+      new Set(['t1']),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'task', id: 't1', done: true });
+    // Deadline date part is derived locally — not asserting the exact day here
+    // (timezone-dependent), only that it is a non-empty 'YYYY-MM-DD'.
+    expect(items[0].datePart).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('sorts by date, then tasks-before-events, then startTime nulls-last, then title', () => {
+    const sorted = mergeCalendarItems(
+      [task({ id: 'tLate', deadline: '2025-06-20T09:00:00Z' })],
+      [
+        event({ id: 'eTimed', eventDate: '2025-06-20', startTime: '08:00:00' }),
+        event({ id: 'eDateOnly', eventDate: '2025-06-20', startTime: null, title: 'A' }),
+      ],
+    );
+    // All three fall on (local) 2025-06-20-ish; verify relative order rules by
+    // kind + startTime rather than exact day.
+    const ids = sorted.map((i) => i.id);
+    // A task on the same day sorts before events.
+    expect(ids.indexOf('tLate')).toBeLessThan(ids.indexOf('eTimed'));
+    // A timed event sorts before a date-only (null) event on the same day.
+    expect(ids.indexOf('eTimed')).toBeLessThan(ids.indexOf('eDateOnly'));
+  });
+
+  it('undated tasks (empty datePart) sort last', () => {
+    const undated: CalendarItem = {
+      kind: 'task',
+      type: 'pending',
+      title: 'z',
+      id: 'u',
+      datePart: '',
+      startTime: null,
+    };
+    const dated: CalendarItem = {
+      kind: 'event',
+      type: 'quiz',
+      title: 'a',
+      id: 'd',
+      datePart: '2025-06-01',
+      startTime: null,
+    };
+    expect(compareCalendarItems(undated, dated)).toBeGreaterThan(0);
+    expect(compareCalendarItems(dated, undated)).toBeLessThan(0);
   });
 });

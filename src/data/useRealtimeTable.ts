@@ -50,13 +50,53 @@ export function useRealtimeTable<Row extends Identified, T extends Identified>(
   mapRow: (row: Row) => T,
   pollMs = 15000,
 ): DataHookState<T> {
+  // The base hook keys strictly by `id`, both for the row payload and the
+  // mapped domain item. It delegates to the keyed engine with id extractors so
+  // the single reconcile implementation lives in one tested place; its
+  // id-keyed behavior and tests are unchanged.
+  return useRealtimeTableKeyed<Row, T>(
+    table,
+    mapRow,
+    (row) => row.id,
+    (item) => item.id,
+    pollMs,
+  );
+}
+
+/**
+ * useRealtimeTableKeyed — the generalized engine behind useRealtimeTable. It is
+ * identical in behavior but reconciles by an arbitrary string key instead of
+ * assuming an `id` column, so a composite-PK table (task_completions, keyed on
+ * `${user_id}:${task_id}`) can reuse the same fetch + reconcile + fallback.
+ *
+ * `keyOfRow` extracts the key from a raw Realtime payload row (used for
+ * INSERT/UPDATE reconcile and, from the `old` payload, for DELETE). `keyOfItem`
+ * extracts the same key from a mapped domain item so the two can be matched.
+ * Under the default replica identity only the PK is guaranteed in the `old`
+ * payload; task_completions carries `replica identity full` (see design.md
+ * replica-identity contract) so a composite key is always reconstructable.
+ *
+ * Like the base, this hook does NOT look at the session; a session-aware caller
+ * (useTaskCompletions) layers mount/teardown on top of it.
+ */
+export function useRealtimeTableKeyed<Row, T>(
+  table: string,
+  mapRow: (row: Row) => T,
+  keyOfRow: (row: Row) => string | null,
+  keyOfItem: (item: T) => string,
+  pollMs = 15000,
+): DataHookState<T> {
   const [data, setData] = useState<T[]>([]);
   const [status, setStatus] = useState<DataStatus>('loading');
-  // mapRow is captured in a ref so the fetch/subscribe effect does not need it
-  // in its dependency array (callers pass a module-level fn, but this is safe
-  // regardless of identity stability).
+  // mapRow/key extractors are captured in refs so the fetch/subscribe effect
+  // does not need them in its dependency array (callers pass module-level fns,
+  // but this is safe regardless of identity stability).
   const mapRef = useRef(mapRow);
   mapRef.current = mapRow;
+  const keyOfRowRef = useRef(keyOfRow);
+  keyOfRowRef.current = keyOfRow;
+  const keyOfItemRef = useRef(keyOfItem);
+  keyOfItemRef.current = keyOfItem;
 
   const fetchAll = useCallback(async (): Promise<void> => {
     if (!supabase) {
@@ -98,30 +138,41 @@ export function useRealtimeTable<Row extends Identified, T extends Identified>(
 
     void fetchAll();
 
-    const reconcile = (payload: RealtimePostgresChangesPayload<Row>) => {
+    // The payload is typed with the loose index-signature shape the Realtime
+    // SDK requires; rows are cast to the caller's Row (the mapRow / keyOf fns
+    // are the only readers and know the concrete columns).
+    const reconcile = (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      payload: RealtimePostgresChangesPayload<{ [key: string]: any }>,
+    ) => {
       if (!active) return;
       setData((prev) => {
         if (payload.eventType === 'INSERT') {
           const row = payload.new as Row;
-          if (prev.some((item) => item.id === row.id)) {
+          const key = keyOfRowRef.current(row);
+          if (key == null) return prev;
+          if (prev.some((item) => keyOfItemRef.current(item) === key)) {
             // Already present (e.g. arrived via a concurrent refetch): replace.
             return prev.map((item) =>
-              item.id === row.id ? mapRef.current(row) : item,
+              keyOfItemRef.current(item) === key ? mapRef.current(row) : item,
             );
           }
           return [...prev, mapRef.current(row)];
         }
         if (payload.eventType === 'UPDATE') {
           const row = payload.new as Row;
+          const key = keyOfRowRef.current(row);
+          if (key == null) return prev;
           return prev.map((item) =>
-            item.id === row.id ? mapRef.current(row) : item,
+            keyOfItemRef.current(item) === key ? mapRef.current(row) : item,
           );
         }
         if (payload.eventType === 'DELETE') {
-          // Only the PK is guaranteed in the old payload under default identity.
-          const oldId = (payload.old as Partial<Row>).id;
-          if (oldId == null) return prev;
-          return prev.filter((item) => item.id !== oldId);
+          // The key must be reconstructable from the `old` payload: the PK
+          // under default identity, or any column under `replica identity full`.
+          const oldKey = keyOfRowRef.current(payload.old as Row);
+          if (oldKey == null) return prev;
+          return prev.filter((item) => keyOfItemRef.current(item) !== oldKey);
         }
         return prev;
       });

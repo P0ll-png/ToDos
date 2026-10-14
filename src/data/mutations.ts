@@ -10,7 +10,7 @@
  * error. Realtime (or the fallback poll) is what reconciles successful writes.
  */
 import { supabase } from '../lib/supabase';
-import type { TaskStatus, UserRole } from '../lib/types';
+import type { EventType, TaskStatus, UserRole } from '../lib/types';
 
 export type MutationError = 'not-configured' | 'denied' | 'network';
 
@@ -88,6 +88,122 @@ export async function setTaskStatus(
     .from('tasks')
     .update({ status })
     .eq('id', taskId);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+// ============ events (officer-only; RLS is the sole gate) ============
+
+interface AddEventInput {
+  type: EventType;
+  title: string;
+  subjectId?: string | null; // nullable; '' / undefined -> null
+  eventDate: string; // 'YYYY-MM-DD'
+  startTime?: string | null; // 'HH:MM' / 'HH:MM:SS' or null
+  endTime?: string | null;
+  location?: string; // '' default — the column is NOT NULL DEFAULT ''
+  notes?: string; // '' default — the column is NOT NULL DEFAULT ''
+  createdBy?: string | null; // the officer's profile id
+}
+
+/**
+ * addEvent — officer-only insert. No client role check: a member/anon attempt
+ * is denied by the events_write RLS policy and surfaces MUTATION_MESSAGES.denied
+ * ("Only officers can do that"), exactly like addTask. location/notes send ''
+ * (never null) because both columns are NOT NULL DEFAULT '' (NIT5).
+ */
+export async function addEvent(input: AddEventInput): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const row: Record<string, unknown> = {
+    type: input.type,
+    title: input.title,
+    subject_id: input.subjectId ? input.subjectId : null,
+    event_date: input.eventDate,
+    start_time: input.startTime ? input.startTime : null,
+    end_time: input.endTime ? input.endTime : null,
+    location: input.location ?? '',
+    notes: input.notes ?? '',
+  };
+  if (input.createdBy !== undefined) row.created_by = input.createdBy;
+  const { error } = await supabase.from('events').insert(row);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+interface UpdateEventPatch {
+  type?: EventType;
+  title?: string;
+  subjectId?: string | null;
+  eventDate?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  location?: string;
+  notes?: string;
+}
+
+/** updateEvent — officer-only update. Only the provided fields are patched. */
+export async function updateEvent(
+  id: string,
+  patch: UpdateEventPatch,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const row: Record<string, unknown> = {};
+  if (patch.type !== undefined) row.type = patch.type;
+  if (patch.title !== undefined) row.title = patch.title;
+  if (patch.subjectId !== undefined) {
+    row.subject_id = patch.subjectId ? patch.subjectId : null;
+  }
+  if (patch.eventDate !== undefined) row.event_date = patch.eventDate;
+  if (patch.startTime !== undefined) {
+    row.start_time = patch.startTime ? patch.startTime : null;
+  }
+  if (patch.endTime !== undefined) {
+    row.end_time = patch.endTime ? patch.endTime : null;
+  }
+  if (patch.location !== undefined) row.location = patch.location;
+  if (patch.notes !== undefined) row.notes = patch.notes;
+  const { error } = await supabase.from('events').update(row).eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+/** removeEvent — officer-only delete. */
+export async function removeEvent(id: string): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase.from('events').delete().eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+// ============ personal tracker (per-account completions) ============
+
+/**
+ * markTaskDone / unmarkTaskDone — the ONE deliberate optimistic path in this
+ * module (justified by FR-2.8 cross-device liveness and the low stakes of a
+ * self-only toggle; see design.md Error handling). The caller updates its local
+ * completedTaskIds set IMMEDIATELY and reverts on a non-ok result; the Realtime
+ * reconcile is the source of truth and is idempotent on the Set, so the
+ * optimistic guess and the self-echoed INSERT/DELETE converge regardless of
+ * arrival order. These write only task_completions — tasks.status is NEVER
+ * touched by this path (FR-2.2). RLS (tc_insert/tc_delete, user_id = auth.uid())
+ * is the real gate; no client role check.
+ */
+export async function markTaskDone(
+  taskId: string,
+  userId: string,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('task_completions')
+    .insert({ user_id: userId, task_id: taskId });
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+export async function unmarkTaskDone(
+  taskId: string,
+  userId: string,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('task_completions')
+    .delete()
+    .match({ user_id: userId, task_id: taskId });
   return error ? { ok: false, error: classify(error) } : { ok: true };
 }
 
