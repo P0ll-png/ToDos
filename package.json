@@ -10,8 +10,6 @@
     "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rls": "node scripts/run-rls-tests.mjs",
-    "seed:rls": "node scripts/seed-rls-fixtures.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

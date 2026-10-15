@@ -1,7 +1,0 @@
-{
-  "task_id": "task-classboard-ext",
-  "task_description": "Extend the Class To-Do Board (React + TS + Vite + Supabase) per the FINAL design.md: a new 0003 migration (events, task_completions, absence_requests, absence_attachments, reviewers + enums, GRANTs, RLS, storage.objects policies, publication, replica identity), top navigation across Board/Absences/Reviewers, officer-managed events, per-account personal task tracker, month calendar, private-attachment absences workflow, and a shared-reviewers page. RLS is the sole authorization boundary; all colors are theme tokens with WCAG AA; derived logic is pure functions in src/lib with unit tests.",
-  "status": "pending",
-  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006"],
-  "blocked_reason": null
-}
