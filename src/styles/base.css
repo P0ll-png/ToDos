@@ -337,6 +337,21 @@ button {
   .mc-dots {
     display: flex;
   }
+
+  /*
+   * Shrink the month grid so all 7 columns fit a ~360px viewport without any
+   * page-level horizontal scroll. Cells get a shorter min-height and tighter
+   * padding (now that the dot row, not the chip stack, is shown), and the grid
+   * gap tightens. Sizing only — colors stay on the inline tokens.
+   */
+  .mc-grid {
+    gap: 0.125rem;
+  }
+
+  .mc-cell {
+    min-height: 3.25rem;
+    padding: 0.1875rem;
+  }
 }
 
 /* Visually hidden but available to assistive tech. */

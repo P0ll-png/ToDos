@@ -115,7 +115,12 @@ export function MonthCalendar({
         ))}
       </div>
 
-      <div role="grid" aria-label={`${MONTH_NAMES[month0]} ${year}`} style={gridStyle}>
+      <div
+        role="grid"
+        aria-label={`${MONTH_NAMES[month0]} ${year}`}
+        className="mc-grid"
+        style={gridStyle}
+      >
         {cells.map((cell) => {
           const items = buckets.get(cell.dateYMD) ?? [];
           const { shown, moreCount } = visibleWithOverflow(items, 3);
@@ -125,6 +130,7 @@ export function MonthCalendar({
               key={cell.dateYMD}
               type="button"
               role="gridcell"
+              className="mc-cell"
               onClick={() => onSelectDay(cell.dateYMD)}
               aria-pressed={isSelected}
               aria-label={dayAriaLabel(cell.dateYMD, items)}
@@ -242,7 +248,7 @@ const todayButtonStyle: React.CSSProperties = {
 
 const weekHeadStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(7, 1fr)',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
   gap: '0.25rem',
   marginBottom: '0.25rem',
 };
@@ -257,7 +263,7 @@ const weekHeadCellStyle: React.CSSProperties = {
 
 const gridStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(7, 1fr)',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
   gap: '0.25rem',
 };
 
@@ -272,6 +278,8 @@ function cellStyle(
     alignItems: 'stretch',
     gap: '0.1875rem',
     minHeight: '4.5rem',
+    minWidth: 0,
+    overflow: 'hidden',
     padding: '0.25rem',
     textAlign: 'left',
     background: selected ? 'var(--surface-2)' : 'var(--surface)',
