@@ -25,6 +25,10 @@ interface DetailsPanelProps {
    */
   selectedDay?: string | null;
   dayItems?: CalendarItem[];
+  /** The signed-in viewer's own completed event ids (day mode only). */
+  completedEventIds?: Set<string>;
+  /** Whether the viewer is signed in (gates the event done indicator). */
+  signedIn?: boolean;
 }
 
 export function DetailsPanel({
@@ -34,6 +38,8 @@ export function DetailsPanel({
   selectedSubjectId,
   selectedDay = null,
   dayItems = [],
+  completedEventIds = new Set(),
+  signedIn = false,
 }: DetailsPanelProps) {
   // Month-calendar day mode takes precedence when a day is selected.
   if (selectedDay !== null) {
@@ -46,28 +52,34 @@ export function DetailsPanel({
           </p>
         ) : (
           <ul style={listStyle}>
-            {dayItems.map((item) => (
-              <li key={`${item.kind}:${item.id}`} style={itemStyle}>
-                <div style={titleRowStyle}>
-                  {item.kind === 'event' ? (
-                    <EventBadge type={item.type as EventType} />
-                  ) : null}
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      ...(item.kind === 'task' && item.done
-                        ? { color: 'var(--task-done)', textDecoration: 'line-through' }
-                        : null),
-                    }}
-                  >
-                    {item.title}
-                    {item.kind === 'task' && item.done && (
-                      <span className="sr-only"> (done)</span>
-                    )}
-                  </span>
-                </div>
-              </li>
-            ))}
+            {dayItems.map((item) => {
+              const eventDoneForMe =
+                item.kind === 'event' &&
+                signedIn &&
+                completedEventIds.has(item.id);
+              const done =
+                (item.kind === 'task' && item.done) || eventDoneForMe;
+              return (
+                <li key={`${item.kind}:${item.id}`} style={itemStyle}>
+                  <div style={titleRowStyle}>
+                    {item.kind === 'event' ? (
+                      <EventBadge type={item.type as EventType} />
+                    ) : null}
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        ...(done
+                          ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+                          : null),
+                      }}
+                    >
+                      {item.title}
+                      {done && <span className="sr-only"> (done)</span>}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

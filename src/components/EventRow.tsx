@@ -14,6 +14,12 @@ interface EventRowProps {
   isOfficer: boolean;
   busy: boolean;
   onRemove: (event: EventItem) => void;
+  /** Null when signed out: no personal checkbox is rendered. */
+  signedIn: boolean;
+  /** Whether the viewer has marked this event done for themselves. */
+  completedForMe: boolean;
+  /** Toggle the viewer's own completion (optimistic). */
+  onToggleCompletion: (event: EventItem, next: boolean) => void;
 }
 
 /** 'HH:MM:SS' / 'HH:MM' -> 'HH:MM'. */
@@ -27,6 +33,9 @@ export function EventRow({
   isOfficer,
   busy,
   onRemove,
+  signedIn,
+  completedForMe,
+  onToggleCompletion,
 }: EventRowProps) {
   const timeLabel =
     event.startTime == null
@@ -37,10 +46,29 @@ export function EventRow({
 
   return (
     <li style={rowStyle}>
-      <div style={{ minWidth: 0, flex: 1 }}>
+      {signedIn && (
+        <input
+          type="checkbox"
+          checked={completedForMe}
+          onChange={(e) => onToggleCompletion(event, e.target.checked)}
+          aria-label={`Mark event ${event.title} done for me`}
+          style={checkboxStyle}
+        />
+      )}
+
+      <div
+        style={{
+          minWidth: 0,
+          flex: 1,
+          ...(completedForMe
+            ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+            : null),
+        }}
+      >
         <div style={titleRowStyle}>
           <EventBadge type={event.type} />
           <span style={{ fontWeight: 600 }}>{event.title}</span>
+          {completedForMe && <span className="sr-only"> (done)</span>}
         </div>
         <p
           className="muted"
@@ -79,6 +107,14 @@ const rowStyle: React.CSSProperties = {
   borderRadius: 'calc(var(--radius) - 4px)',
   background: 'var(--surface-2)',
   border: '1px solid var(--border)',
+};
+
+const checkboxStyle: React.CSSProperties = {
+  flexShrink: 0,
+  width: '1.1rem',
+  height: '1.1rem',
+  marginTop: '0.15rem',
+  accentColor: 'var(--accent)',
 };
 
 const titleRowStyle: React.CSSProperties = {

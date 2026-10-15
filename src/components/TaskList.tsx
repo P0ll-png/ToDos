@@ -25,10 +25,12 @@ import { useSession } from '../context/SessionProvider';
 import { mergeCalendarItems } from '../lib/calendar';
 import {
   MUTATION_MESSAGES,
+  markEventDone,
   markTaskDone,
   removeEvent,
   removeTask,
   setTaskStatus,
+  unmarkEventDone,
   unmarkTaskDone,
 } from '../data/mutations';
 import { AddTaskDialog } from './AddTaskDialog';
@@ -48,6 +50,11 @@ interface TaskListProps {
   /** Optimistically add/remove a task id in the parent completion set. */
   onAddLocalCompletion: (taskId: string) => void;
   onRemoveLocalCompletion: (taskId: string) => void;
+  /** The signed-in viewer's own completed event ids (empty when signed out). */
+  completedEventIds: Set<string>;
+  /** Optimistically add/remove an event id in the parent completion set. */
+  onAddLocalEventCompletion: (eventId: string) => void;
+  onRemoveLocalEventCompletion: (eventId: string) => void;
 }
 
 export function TaskList({
@@ -57,6 +64,9 @@ export function TaskList({
   completedTaskIds,
   onAddLocalCompletion,
   onRemoveLocalCompletion,
+  completedEventIds,
+  onAddLocalEventCompletion,
+  onRemoveLocalEventCompletion,
 }: TaskListProps) {
   const { isOfficer, session, profile } = useSession();
   const signedIn = session != null;
@@ -148,6 +158,24 @@ export function TaskList({
     }
   }
 
+  // Event completion mirrors the task toggle: optimistic flip, revert on error.
+  async function handleToggleEventCompletion(event: EventItem, next: boolean) {
+    const uid = profile?.id ?? session?.user.id ?? null;
+    if (!uid) return;
+    if (next) onAddLocalEventCompletion(event.id);
+    else onRemoveLocalEventCompletion(event.id);
+    setError(null);
+    const result = next
+      ? await markEventDone(event.id, uid)
+      : await unmarkEventDone(event.id, uid);
+    if (!result.ok) {
+      // Revert the optimistic change.
+      if (next) onRemoveLocalEventCompletion(event.id);
+      else onAddLocalEventCompletion(event.id);
+      if (result.error) setError(MUTATION_MESSAGES[result.error]);
+    }
+  }
+
   function renderItem(item: CalendarItem) {
     if (item.kind === 'task') {
       const task = taskById.get(item.id);
@@ -177,6 +205,9 @@ export function TaskList({
         isOfficer={isOfficer}
         busy={busy}
         onRemove={handleRemoveEvent}
+        signedIn={signedIn}
+        completedForMe={completedEventIds.has(event.id)}
+        onToggleCompletion={handleToggleEventCompletion}
       />
     );
   }

@@ -17,6 +17,8 @@ vi.mock('../data/mutations', () => ({
   removeEvent: vi.fn(),
   markTaskDone: vi.fn(),
   unmarkTaskDone: vi.fn(),
+  markEventDone: vi.fn(),
+  unmarkEventDone: vi.fn(),
 }));
 
 import { TaskList } from './TaskList';
@@ -79,6 +81,9 @@ function renderList(
       completedTaskIds={new Set()}
       onAddLocalCompletion={noop}
       onRemoveLocalCompletion={noop}
+      completedEventIds={new Set()}
+      onAddLocalEventCompletion={noop}
+      onRemoveLocalEventCompletion={noop}
       {...overrides}
     />,
   );
@@ -204,6 +209,9 @@ describe('TaskList personal tracker (completion checkbox + filter)', () => {
         completedTaskIds={new Set()}
         onAddLocalCompletion={noop}
         onRemoveLocalCompletion={noop}
+        completedEventIds={new Set()}
+        onAddLocalEventCompletion={noop}
+        onRemoveLocalEventCompletion={noop}
       />,
     );
     screen.getByRole('button', { name: 'My finished' }).click();
@@ -215,6 +223,9 @@ describe('TaskList personal tracker (completion checkbox + filter)', () => {
         completedTaskIds={new Set()}
         onAddLocalCompletion={noop}
         onRemoveLocalCompletion={noop}
+        completedEventIds={new Set()}
+        onAddLocalEventCompletion={noop}
+        onRemoveLocalEventCompletion={noop}
       />,
     );
     // The unfinished task is filtered out...

@@ -142,6 +142,27 @@ SQL editor and run it (or `supabase db push`). It:
 
 It does **not** touch any `0001`–`0004` object.
 
+### Step 3b — apply `supabase/migrations/0006_event_completions.sql`
+
+This is the forward migration for the **per-account event tracker** ("mark an
+event done for me"). Paste it into the SQL editor and run it (or
+`supabase db push`). It mirrors `task_completions` from `0003` exactly. It:
+
+- creates `public.event_completions` (`user_id`, `event_id`, `completed_at`)
+  with a **composite primary key** `(user_id, event_id)` and no single `id`
+  column — a **text-only** table, so **no storage bucket is needed**;
+- grants `select`/`insert`/`delete` to `authenticated` **only** — there is
+  **no anon grant**, **no update grant**, and **no update policy** (completion
+  is a toggle expressed as insert/delete);
+- adds the own-rows-only `ec_select`/`ec_insert`/`ec_delete` policies, each
+  gated on `user_id = auth.uid()`;
+- adds `event_completions` to the `supabase_realtime` publication. Its SELECT
+  policy is **row-dependent** (`user_id = auth.uid()`), so it sets
+  `alter table public.event_completions replica identity full` per the
+  replica-identity contract (same treatment as `task_completions`).
+
+It does **not** touch any `0001`–`0005` object or change class-wide event state.
+
 ### Step 4 — privacy posture, signed URLs, and the evidence link
 
 - The `reviewers` bucket is private. Downloads are served only through

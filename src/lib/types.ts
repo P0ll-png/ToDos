@@ -152,6 +152,23 @@ export interface TaskCompletion {
   completedAt: string | null;
 }
 
+/**
+ * event_completions row. Composite primary key (user_id, event_id); no single
+ * id. completed_at is an ISO timestamptz string. Mirrors TaskCompletionRow.
+ */
+export interface EventCompletionRow {
+  user_id: string;
+  event_id: string;
+  completed_at: string | null;
+}
+
+/** Domain shape for a per-user event completion (camelCase). */
+export interface EventCompletion {
+  userId: string;
+  eventId: string;
+  completedAt: string | null;
+}
+
 // ============ absences (FEAT) ============
 
 /**

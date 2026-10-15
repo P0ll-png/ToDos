@@ -22,6 +22,7 @@ import { useScheduleSlots } from '../data/useScheduleSlots';
 import { useTasks } from '../data/useTasks';
 import { useEvents } from '../data/useEvents';
 import { useTaskCompletions } from '../data/useTaskCompletions';
+import { useEventCompletions } from '../data/useEventCompletions';
 import { useSession } from '../context/SessionProvider';
 import { mergeCalendarItems } from '../lib/calendar';
 import { localTodayISO } from '../lib/derive';
@@ -44,6 +45,7 @@ export function Layout() {
   const tasksState = useTasks(undefined, authEpoch);
   const eventsState = useEvents(undefined, authEpoch);
   const completions = useTaskCompletions();
+  const eventCompletions = useEventCompletions();
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(
     null,
@@ -67,6 +69,7 @@ export function Layout() {
 
   const signedIn = session != null;
   const completedTaskIds = completions.completedTaskIds;
+  const completedEventIds = eventCompletions.completedEventIds;
   const viewer = useMemo(
     () => (signedIn ? { signedIn: true, completedTaskIds } : null),
     [signedIn, completedTaskIds],
@@ -155,6 +158,8 @@ export function Layout() {
             selectedSubjectId={selectedSubjectId}
             selectedDay={view === 'month' ? selectedDay : null}
             dayItems={dayItems}
+            completedEventIds={completedEventIds}
+            signedIn={signedIn}
           />
         </div>
         <div className="board-right">
@@ -165,6 +170,9 @@ export function Layout() {
             completedTaskIds={completedTaskIds}
             onAddLocalCompletion={completions.addLocal}
             onRemoveLocalCompletion={completions.removeLocal}
+            completedEventIds={completedEventIds}
+            onAddLocalEventCompletion={eventCompletions.addLocal}
+            onRemoveLocalEventCompletion={eventCompletions.removeLocal}
           />
         </div>
       </main>

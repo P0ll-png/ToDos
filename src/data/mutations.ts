@@ -248,6 +248,38 @@ export async function unmarkTaskDone(
   return error ? { ok: false, error: classify(error) } : { ok: true };
 }
 
+/**
+ * markEventDone / unmarkEventDone — the per-account event completion toggle,
+ * mirroring markTaskDone/unmarkTaskDone exactly (the one deliberate optimistic
+ * path). The caller updates its local completedEventIds set IMMEDIATELY and
+ * reverts on a non-ok result; the Realtime reconcile is the source of truth and
+ * is idempotent on the Set. These write only event_completions — no class-wide
+ * event state is touched. RLS (ec_insert/ec_delete, user_id = auth.uid()) is the
+ * real gate; no client role check.
+ */
+export async function markEventDone(
+  eventId: string,
+  userId: string,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('event_completions')
+    .insert({ user_id: userId, event_id: eventId });
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+export async function unmarkEventDone(
+  eventId: string,
+  userId: string,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase
+    .from('event_completions')
+    .delete()
+    .match({ user_id: userId, event_id: eventId });
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
 interface UpsertSubjectInput {
   id?: string;
   name: string;
