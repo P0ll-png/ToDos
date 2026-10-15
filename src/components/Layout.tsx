@@ -3,7 +3,7 @@
  * stacks a view toggle over either the ScheduleGrid (weekly) or the
  * MonthCalendar (month), then the DetailsPanel; the right column is the
  * TaskList. It wires the data hooks (subjects, slots, tasks, events) and the
- * per-account completion hook, and the Header.
+ * per-account completion hook.
  *
  * Subject selection drives the weekly ScheduleGrid highlight + DetailsPanel. In
  * month view a selected DAY drives the DetailsPanel instead (its items are the
@@ -25,7 +25,6 @@ import { useTaskCompletions } from '../data/useTaskCompletions';
 import { useSession } from '../context/SessionProvider';
 import { mergeCalendarItems } from '../lib/calendar';
 import { localTodayISO } from '../lib/derive';
-import { Header } from './Header';
 import { BoardViewToggle, type BoardView } from './BoardViewToggle';
 import { ScheduleGrid } from './ScheduleGrid';
 import { MonthCalendar } from './MonthCalendar';
@@ -109,8 +108,6 @@ export function Layout() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
-      <Header />
-
       {anyError && (
         <div role="alert" style={errorBarStyle}>
           <span>Couldn&apos;t load the latest data.</span>

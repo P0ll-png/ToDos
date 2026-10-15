@@ -1,15 +1,21 @@
 /**
- * Nav — the themed top bar: three real <button>s (Board / Absences /
- * Reviewers) wired to setPage, with aria-current="page" on the active one
- * (design OD-1, FR-0.5), plus the shared <AccountControls />. State-based page
- * switching, no router.
+ * TopBar — the single, unified responsive top bar rendered once at App level.
+ * It folds together what used to be two stacked bars (Header + Nav) so every
+ * page shows exactly ONE bar (design OD-1, fixes the duplicate-navbar bug).
  *
- * The Absences button carries a slot for the officer pending-count badge; it is
- * left as an empty placeholder here and wired by FEAT-005 (replace the
- * `pendingBadge` placeholder with the live count). Colors come only from CSS
- * tokens; the global :focus-visible ring applies to every button.
+ * LEFT: the circular logo holder (the .header-logo span + the HeaderLogo
+ * /logo.png-with-SVG fallback) and the app title. TABS: the three real
+ * <button>s (Board / Absences / Reviewers) wired to setPage with
+ * aria-current="page" on the active one, carrying the officer-only Absences
+ * pending-count badge (design OD-4). RIGHT: exactly one <AccountControls />.
+ *
+ * Colors come only from CSS tokens; the global :focus-visible ring applies to
+ * every button. Responsive collapse lives in base.css: at <=640px the title
+ * text collapses (.header-title) and the tabs wrap to their own full-width
+ * line (.topbar-tabs) so they stay visible and tappable with no horizontal
+ * overflow.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNav, type Page } from '../context/NavProvider';
 import { useSession } from '../context/SessionProvider';
 import { useAbsencePendingCount } from '../data/useAbsencePendingCount';
@@ -26,7 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { page: 'reviewers', label: 'Reviewers' },
 ];
 
-export function Nav() {
+export function TopBar() {
   const { page, setPage } = useNav();
   const { isOfficer } = useSession();
   // Officer pending-count badge (design OD-4): the count query is enabled only
@@ -61,11 +67,13 @@ export function Nav() {
 
   return (
     <nav
+      className="topbar"
       aria-label="Primary"
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
         gap: '1rem',
         padding: '0.5rem 1rem',
         borderBottom: '1px solid var(--border)',
@@ -73,7 +81,16 @@ export function Nav() {
         color: 'var(--text)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+        <span className="header-logo" aria-hidden="true">
+          <HeaderLogo />
+        </span>
+        <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
+          II-CCSAD || Class To-Do Board
+        </h1>
+      </div>
+
+      <div className="topbar-tabs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
         {NAV_ITEMS.map((item) => {
           const active = item.page === page;
           return (
@@ -93,6 +110,45 @@ export function Nav() {
 
       <AccountControls />
     </nav>
+  );
+}
+
+/**
+ * HeaderLogo — the mark inside the circular holder. Loads /logo.png from the
+ * public/ folder; if that file is absent or fails to load, it falls back to a
+ * built-in SVG mark so the bar never shows a broken image. Drop your logo at
+ * public/logo.png to use it — no code change needed (see public/README.md).
+ */
+function HeaderLogo() {
+  const [imgFailed, setImgFailed] = useState(false);
+  if (imgFailed) return <LogoMark />;
+  return (
+    <img
+      src="/logo.png"
+      alt=""
+      onError={() => setImgFailed(true)}
+    />
+  );
+}
+
+/** Built-in fallback mark used when no /logo.png is present. Decorative. */
+function LogoMark() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
   );
 }
 

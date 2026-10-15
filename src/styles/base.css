@@ -141,6 +141,32 @@ button {
   object-fit: cover;
 }
 
+/*
+ * TopBar. The single unified bar: brand (logo + title) on the left, the
+ * Board/Absences/Reviewers tabs in the middle, and AccountControls on the
+ * right. It wraps so nothing overflows on narrow screens. Colors are set
+ * inline from tokens on the <nav>; these rules own layout + responsive
+ * collapse only.
+ */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.topbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 /* The label on the sign in/out button; swapped for an icon on small screens. */
 .header-auth-icon {
   display: none;
@@ -150,6 +176,18 @@ button {
   /* Hide the app title text — the logo stands in for it. */
   .header-title {
     display: none;
+  }
+
+  /*
+   * Tabs drop to their own full-width line below the brand/account cluster so
+   * they stay visible and tappable with no horizontal overflow (down to
+   * 320px). order:1 pushes them after the brand and AccountControls.
+   */
+  .topbar-tabs {
+    order: 1;
+    flex-basis: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
   /* Hide the signed-in account name. */
