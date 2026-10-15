@@ -18,6 +18,7 @@ export function BoardViewToggle({ view, onChange }: BoardViewToggleProps) {
         type="button"
         onClick={() => onChange('weekly')}
         aria-pressed={view === 'weekly'}
+        className="board-view-btn"
         style={view === 'weekly' ? activeStyle : baseStyle}
       >
         Weekly schedule
@@ -26,6 +27,7 @@ export function BoardViewToggle({ view, onChange }: BoardViewToggleProps) {
         type="button"
         onClick={() => onChange('month')}
         aria-pressed={view === 'month'}
+        className="board-view-btn"
         style={view === 'month' ? activeStyle : baseStyle}
       >
         Month calendar

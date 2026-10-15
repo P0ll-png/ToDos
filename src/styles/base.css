@@ -113,6 +113,11 @@ button {
 @media (max-width: 860px) {
   .board-main {
     grid-template-columns: 1fr;
+    /* Tighten the outer padding/gap on small screens so the single stacked
+     * column (schedule -> details -> list) gets more usable width without
+     * feeling cramped. The DOM order and single-column collapse are unchanged. */
+    padding: 0.75rem;
+    gap: 0.75rem;
   }
 }
 
@@ -212,6 +217,30 @@ button {
 }
 
 /*
+ * Touch tap targets. On coarse pointers without hover (phones/tablets) the
+ * primary controls get a ~44px minimum height per the common mobile tap-target
+ * guideline, with a little extra vertical padding so the hit area is
+ * comfortable. This is additive — it does not fire on pointer:fine desktops, so
+ * the desktop layout is unchanged — and it changes size only, never colors.
+ */
+@media (hover: none) and (pointer: coarse) {
+  .topbar-tabs button,
+  .account-btn,
+  .board-view-btn {
+    min-height: 44px;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  /* The Appearance icon button and the icon-only auth button are square; grow
+   * both axes so the ~44px target stays balanced rather than a tall sliver. */
+  .account-btn.header-auth-btn,
+  button.account-btn[aria-label="Appearance settings"] {
+    min-width: 44px;
+  }
+}
+
+/*
  * Modal scrim + centering. The backdrop color is the --scrim token (fixed per
  * mode), never a hardcoded color. The dialog scrolls within the viewport on
  * short screens.
@@ -226,6 +255,17 @@ button {
   background: var(--scrim);
   z-index: 50;
   overflow-y: auto;
+}
+
+/*
+ * Narrow-screen overflow guard for dialogs. The scrim keeps its 1rem padding
+ * and overflow-y:auto (above); this ensures the dialog card itself can never be
+ * wider than the scrim's content box, so a fixed max-width in rem can't push
+ * past a 320px viewport. Additive and layout-only — it does not touch the
+ * Modal a11y contract (role/focus trap/Escape live in Modal.tsx).
+ */
+.modal-scrim > * {
+  max-width: 100%;
 }
 
 /*

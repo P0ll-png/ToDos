@@ -41,6 +41,7 @@ export function AccountControls() {
         onClick={() => setShowAppearance(true)}
         aria-label="Appearance settings"
         title="Appearance"
+        className="account-btn"
         style={iconButtonStyle}
       >
         <PaletteIcon />
@@ -50,6 +51,7 @@ export function AccountControls() {
         <button
           type="button"
           onClick={() => setShowAdmin(true)}
+          className="account-btn"
           style={secondaryButtonStyle}
         >
           Members
@@ -67,7 +69,7 @@ export function AccountControls() {
           <button
             type="button"
             onClick={handleSignOut}
-            className="header-auth-btn"
+            className="header-auth-btn account-btn"
             aria-label="Sign out"
             title="Sign out"
             style={secondaryButtonStyle}
@@ -82,7 +84,7 @@ export function AccountControls() {
         <button
           type="button"
           onClick={() => setShowAuth(true)}
-          className="header-auth-btn"
+          className="header-auth-btn account-btn"
           aria-label="Sign in"
           title="Sign in"
           style={accentButtonStyle}
