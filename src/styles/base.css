@@ -165,6 +165,21 @@ button {
   color: var(--text);
 }
 
+/*
+ * Brand + nav cluster. Groups the logo/title and the page tabs into one
+ * left-aligned row so on desktop the tabs sit directly beside the "Class
+ * To-Do Board" sign. AccountControls stays on the far right via the
+ * .topbar's space-between. flex-wrap lets the tabs drop below the brand on
+ * mid-width screens before the <=640px mobile layout takes over.
+ */
+.topbar-brandnav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .topbar-tabs {
   display: flex;
   align-items: center;
@@ -184,15 +199,36 @@ button {
   }
 
   /*
-   * Tabs drop to their own full-width line below the brand/account cluster so
-   * they stay visible and tappable with no horizontal overflow (down to
-   * 320px). order:1 pushes them after the brand and AccountControls.
+   * The brand+nav cluster takes the full width and stacks: the small brand row
+   * on top, then the tabs below it. order:1 pushes the whole cluster beneath
+   * the brand/account line so AccountControls stays reachable at the top.
    */
-  .topbar-tabs {
+  .topbar-brandnav {
     order: 1;
     flex-basis: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  /*
+   * Tabs become a single horizontally scrollable row rather than wrapping onto
+   * several lines (there are four of them). They stay on one tidy line, each
+   * fully tappable, and the row scrolls sideways if the viewport is very narrow
+   * (down to 320px) with no page-level overflow. Momentum scroll on iOS; the
+   * scrollbar is left visible-by-default so the overflow is discoverable.
+   */
+  .topbar-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    padding-bottom: 0.125rem;
+  }
+
+  /* Tabs must not shrink below their label width inside the scroll row. */
+  .topbar-tabs button {
+    flex: 0 0 auto;
   }
 
   /* Hide the signed-in account name. */

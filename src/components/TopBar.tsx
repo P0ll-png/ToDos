@@ -3,17 +3,20 @@
  * It folds together what used to be two stacked bars (Header + Nav) so every
  * page shows exactly ONE bar (design OD-1, fixes the duplicate-navbar bug).
  *
- * LEFT: the circular logo holder (the .header-logo span + the HeaderLogo
- * /logo.png-with-SVG fallback) and the app title. TABS: the three real
- * <button>s (Board / Absences / Reviewers) wired to setPage with
- * aria-current="page" on the active one, carrying the officer-only Absences
- * pending-count badge (design OD-4). RIGHT: exactly one <AccountControls />.
+ * LEFT CLUSTER (.topbar-brandnav): the circular logo holder (.header-logo +
+ * the HeaderLogo /logo.png-with-SVG fallback), the app title (.header-title),
+ * and immediately beside them the real <button> tabs (Board / Absences /
+ * Reviewers / Announcements) wired to setPage with aria-current="page" on the
+ * active one, carrying the officer-only Absences pending-count badge (design
+ * OD-4). On desktop every page option therefore sits right next to the brand.
+ * RIGHT: exactly one <AccountControls />, pushed to the far edge by the
+ * .topbar's space-between.
  *
  * Colors come only from CSS tokens; the global :focus-visible ring applies to
  * every button. Responsive collapse lives in base.css: at <=640px the title
- * text collapses (.header-title) and the tabs wrap to their own full-width
- * line (.topbar-tabs) so they stay visible and tappable with no horizontal
- * overflow.
+ * text collapses (.header-title) and the whole brand+nav cluster stacks so the
+ * tabs wrap onto their own full-width, horizontally scrollable row — tappable
+ * with no page overflow.
  */
 import { useState, type ReactNode } from 'react';
 import { useNav, type Page } from '../context/NavProvider';
@@ -82,31 +85,40 @@ export function TopBar() {
         color: 'var(--text)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-        <span className="header-logo" aria-hidden="true">
-          <HeaderLogo />
-        </span>
-        <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
-          II-CCSAD || Class To-Do Board
-        </h1>
-      </div>
+      {/*
+        LEFT CLUSTER: brand (logo + title) and the nav tabs sit together on the
+        left so on desktop every page option lines up directly beside the
+        "Class To-Do Board" sign. AccountControls stays pushed to the far right
+        (the .topbar's space-between does the pushing). On <=640px the tabs wrap
+        to their own full-width line below the brand (see base.css).
+      */}
+      <div className="topbar-brandnav">
+        <div className="topbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+          <span className="header-logo" aria-hidden="true">
+            <HeaderLogo />
+          </span>
+          <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
+            II-CCSAD || Class To-Do Board
+          </h1>
+        </div>
 
-      <div className="topbar-tabs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
-        {NAV_ITEMS.map((item) => {
-          const active = item.page === page;
-          return (
-            <button
-              key={item.page}
-              type="button"
-              onClick={() => setPage(item.page)}
-              aria-current={active ? 'page' : undefined}
-              style={active ? activeTabStyle : tabStyle}
-            >
-              {item.label}
-              {badgeFor(item.page)}
-            </button>
-          );
-        })}
+        <div className="topbar-tabs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
+          {NAV_ITEMS.map((item) => {
+            const active = item.page === page;
+            return (
+              <button
+                key={item.page}
+                type="button"
+                onClick={() => setPage(item.page)}
+                aria-current={active ? 'page' : undefined}
+                style={active ? activeTabStyle : tabStyle}
+              >
+                {item.label}
+                {badgeFor(item.page)}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <AccountControls />
