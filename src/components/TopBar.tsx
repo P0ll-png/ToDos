@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { page: 'board', label: 'Board' },
   { page: 'absences', label: 'Absences' },
   { page: 'reviewers', label: 'Reviewers' },
+  { page: 'announcements', label: 'Announcements' },
 ];
 
 export function TopBar() {

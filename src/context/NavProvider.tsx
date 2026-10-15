@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from 'react';
 
-export type Page = 'board' | 'absences' | 'reviewers';
+export type Page = 'board' | 'absences' | 'reviewers' | 'announcements';
 
 interface NavContextValue {
   page: Page;

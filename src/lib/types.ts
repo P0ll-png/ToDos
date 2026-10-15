@@ -246,6 +246,29 @@ export interface Reviewer {
   uploaderName?: string;
 }
 
+// ============ announcements (FEAT) ============
+
+/** announcements row. created_at is an ISO timestamptz string. */
+export interface AnnouncementRow {
+  id: string;
+  title: string;
+  body: string;
+  created_by: string | null;
+  created_at: string | null;
+}
+
+/** Domain shape for an announcement (camelCase). */
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  createdBy: string | null;
+  createdAt: string | null;
+  /** Only populated by the author embed (author:profiles(name)), like
+   * Reviewer.uploaderName — a privacy-safe name-only lookup. */
+  authorName?: string;
+}
+
 // ============ calendar (FEAT) ============
 
 /**

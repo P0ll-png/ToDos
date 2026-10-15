@@ -178,6 +178,40 @@ export async function removeEvent(id: string): Promise<MutationResult> {
   return error ? { ok: false, error: classify(error) } : { ok: true };
 }
 
+// ============ announcements (officer-only; RLS is the sole gate) ============
+
+interface AddAnnouncementInput {
+  title: string;
+  body?: string; // '' default — the column is NOT NULL DEFAULT ''
+  createdBy?: string | null; // the officer's profile id
+}
+
+/**
+ * addAnnouncement — officer-only insert. No client role check: a member/anon
+ * attempt is denied by announcements_insert (with check is_officer()) and
+ * surfaces MUTATION_MESSAGES.denied, exactly like addEvent. body sends ''
+ * (never null) because the column is NOT NULL DEFAULT ''.
+ */
+export async function addAnnouncement(
+  input: AddAnnouncementInput,
+): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const row: Record<string, unknown> = {
+    title: input.title,
+    body: input.body ?? '',
+  };
+  if (input.createdBy !== undefined) row.created_by = input.createdBy;
+  const { error } = await supabase.from('announcements').insert(row);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
+/** removeAnnouncement — officer-only delete. */
+export async function removeAnnouncement(id: string): Promise<MutationResult> {
+  if (!supabase) return { ok: false, error: 'not-configured' };
+  const { error } = await supabase.from('announcements').delete().eq('id', id);
+  return error ? { ok: false, error: classify(error) } : { ok: true };
+}
+
 // ============ personal tracker (per-account completions) ============
 
 /**

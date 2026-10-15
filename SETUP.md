@@ -122,6 +122,26 @@ It does **not** touch events, task_completions, reviewers, the `ar_*` policies,
 the realtime publication, or `0001`/`0002`/`0003` (which stay byte-for-byte
 unchanged). **Applying `0004` is the only DB step for the evidence-link change.**
 
+### Step 3a — apply `supabase/migrations/0005_announcements.sql`
+
+This is the forward migration for the **Announcements board**. Paste it into the
+SQL editor and run it (or `supabase db push`). It:
+
+- creates `public.announcements` (`id`, `title`, `body`, `created_by`,
+  `created_at`) — a **text-only** table, so **no storage bucket is needed**;
+- grants `select` to **anon + authenticated** (public read) and `insert`/
+  `delete` to `authenticated` only — there is **no update grant** and **no
+  update policy** (editing an announcement is out of scope, mirroring
+  `reviewers`);
+- adds the `announcements_read` (public), `announcements_insert`, and
+  `announcements_delete` policies, with insert/delete gated to officers via the
+  reused `public.is_officer()`;
+- adds `announcements` to the `supabase_realtime` publication. The SELECT policy
+  is row-independent (`using(true)`), so the **default** replica identity is
+  sufficient — **no `replica identity full`** is set.
+
+It does **not** touch any `0001`–`0004` object.
+
 ### Step 4 — privacy posture, signed URLs, and the evidence link
 
 - The `reviewers` bucket is private. Downloads are served only through

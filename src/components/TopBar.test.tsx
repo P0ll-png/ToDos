@@ -54,7 +54,7 @@ describe('TopBar', () => {
     useAbsencePendingCountMock.mockReturnValue({ count: 0, refetch: vi.fn() });
   });
 
-  it('renders the three tabs as buttons', () => {
+  it('renders the nav tabs as buttons', () => {
     render(<TopBar />);
     expect(screen.getByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(
@@ -62,6 +62,9 @@ describe('TopBar', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Reviewers' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Announcements' }),
     ).toBeInTheDocument();
   });
 

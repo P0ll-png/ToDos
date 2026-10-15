@@ -7,6 +7,7 @@ import { useNav } from '../context/NavProvider';
 import { Layout } from './Layout';
 import { AbsencesPage } from './AbsencesPage';
 import { ReviewersPage } from './ReviewersPage';
+import { AnnouncementsPage } from './AnnouncementsPage';
 
 export function PageRouter() {
   const { page } = useNav();
@@ -16,6 +17,8 @@ export function PageRouter() {
       return <AbsencesPage />;
     case 'reviewers':
       return <ReviewersPage />;
+    case 'announcements':
+      return <AnnouncementsPage />;
     case 'board':
     default:
       return <Layout />;
