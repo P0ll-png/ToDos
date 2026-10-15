@@ -3,20 +3,22 @@
  * It folds together what used to be two stacked bars (Header + Nav) so every
  * page shows exactly ONE bar (design OD-1, fixes the duplicate-navbar bug).
  *
- * LEFT CLUSTER (.topbar-brandnav): the circular logo holder (.header-logo +
- * the HeaderLogo /logo.png-with-SVG fallback), the app title (.header-title),
- * and immediately beside them the real <button> tabs (Board / Absences /
- * Reviewers / Announcements) wired to setPage with aria-current="page" on the
- * active one, carrying the officer-only Absences pending-count badge (design
- * OD-4). On desktop every page option therefore sits right next to the brand.
- * RIGHT: exactly one <AccountControls />, pushed to the far edge by the
- * .topbar's space-between.
+ * Three direct flex children, reordered per breakpoint via CSS `order`:
+ *   .topbar-brand — the circular logo holder (.header-logo + the HeaderLogo
+ *     /logo.png-with-SVG fallback) and the app title (.header-title).
+ *   .topbar-tabs — the real <button> tabs (Board / Absences / Reviewers /
+ *     Announcements) wired to setPage with aria-current="page" on the active
+ *     one, carrying the officer-only Absences pending-count badge (design OD-4).
+ *   <AccountControls /> — theme + (officer) members + auth.
+ *
+ * DESKTOP: brand, then tabs right beside it, with AccountControls pushed to the
+ * far edge, so every page option sits next to the "Class To-Do Board" sign.
+ * MOBILE (<=640px): the brand and AccountControls share the top line (logo +
+ * theme + sign in/out together) and the tabs wrap onto their own full-width
+ * line below — no horizontal page scroll.
  *
  * Colors come only from CSS tokens; the global :focus-visible ring applies to
- * every button. Responsive collapse lives in base.css: at <=640px the title
- * text collapses (.header-title) and the whole brand+nav cluster stacks so the
- * tabs wrap onto their own full-width, horizontally scrollable row — tappable
- * with no page overflow.
+ * every button. Responsive layout lives in base.css (.topbar* rules).
  */
 import { useState, type ReactNode } from 'react';
 import { useNav, type Page } from '../context/NavProvider';
@@ -86,39 +88,43 @@ export function TopBar() {
       }}
     >
       {/*
-        LEFT CLUSTER: brand (logo + title) and the nav tabs sit together on the
-        left so on desktop every page option lines up directly beside the
-        "Class To-Do Board" sign. AccountControls stays pushed to the far right
-        (the .topbar's space-between does the pushing). On <=640px the tabs wrap
-        to their own full-width line below the brand (see base.css).
+        Three direct children of .topbar so flex `order` can rearrange them per
+        breakpoint (see base.css):
+          1. .topbar-brand  — logo + title
+          2. .topbar-tabs   — the page tabs
+          3. AccountControls — theme + (officer) members + auth
+        DESKTOP: brand, then tabs right beside it, with AccountControls pushed to
+        the far right (margin-left:auto on AccountControls) — every page option
+        lines up next to the "Class To-Do Board" sign.
+        MOBILE (<=640px): brand (order 0) and AccountControls (order 1) share the
+        top line — so the logo, theme button and sign in/out button sit together
+        — and the tabs (order 2) wrap onto their own full-width line below.
       */}
-      <div className="topbar-brandnav">
-        <div className="topbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-          <span className="header-logo" aria-hidden="true">
-            <HeaderLogo />
-          </span>
-          <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
-            II-CCSAD || Class To-Do Board
-          </h1>
-        </div>
+      <div className="topbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+        <span className="header-logo" aria-hidden="true">
+          <HeaderLogo />
+        </span>
+        <h1 className="header-title" style={{ fontSize: '1.125rem', margin: 0 }}>
+          II-CCSAD || Class To-Do Board
+        </h1>
+      </div>
 
-        <div className="topbar-tabs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
-          {NAV_ITEMS.map((item) => {
-            const active = item.page === page;
-            return (
-              <button
-                key={item.page}
-                type="button"
-                onClick={() => setPage(item.page)}
-                aria-current={active ? 'page' : undefined}
-                style={active ? activeTabStyle : tabStyle}
-              >
-                {item.label}
-                {badgeFor(item.page)}
-              </button>
-            );
-          })}
-        </div>
+      <div className="topbar-tabs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 }}>
+        {NAV_ITEMS.map((item) => {
+          const active = item.page === page;
+          return (
+            <button
+              key={item.page}
+              type="button"
+              onClick={() => setPage(item.page)}
+              aria-current={active ? 'page' : undefined}
+              style={active ? activeTabStyle : tabStyle}
+            >
+              {item.label}
+              {badgeFor(item.page)}
+            </button>
+          );
+        })}
       </div>
 
       <AccountControls />

@@ -35,7 +35,7 @@ export function AccountControls() {
   const displayName = profile?.name || profile?.email || 'Account';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <div className="account-controls" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
       <button
         type="button"
         onClick={() => setShowAppearance(true)}
