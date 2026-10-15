@@ -7,7 +7,7 @@
  * clears selection; here we also render the no-selection state defensively.
  */
 import { useMemo } from 'react';
-import type { CalendarItem, EventType, Subject, Task } from '../lib/types';
+import type { CalendarItem, EventItem, EventType, Subject, Task } from '../lib/types';
 import { isOverdue, formatDeadline } from '../lib/derive';
 import { sortByDeadline } from '../lib/sorting';
 import { EventBadge } from './EventBadge';
@@ -15,6 +15,7 @@ import { EventBadge } from './EventBadge';
 interface DetailsPanelProps {
   subjects: Subject[];
   tasks: Task[];
+  events?: EventItem[];
   selectedSubjectId: string | null;
   /**
    * Month-calendar day mode (optional). When selectedDay is set, the panel
@@ -29,6 +30,7 @@ interface DetailsPanelProps {
 export function DetailsPanel({
   subjects,
   tasks,
+  events = [],
   selectedSubjectId,
   selectedDay = null,
   dayItems = [],
@@ -76,18 +78,26 @@ export function DetailsPanel({
     <DetailsPanelSubject
       subjects={subjects}
       tasks={tasks}
+      events={events}
       selectedSubjectId={selectedSubjectId}
     />
   );
 }
 
+/** 'HH:MM:SS' / 'HH:MM' -> 'HH:MM'. */
+function hhmm(time: string): string {
+  return time.slice(0, 5);
+}
+
 function DetailsPanelSubject({
   subjects,
   tasks,
+  events,
   selectedSubjectId,
 }: {
   subjects: Subject[];
   tasks: Task[];
+  events: EventItem[];
   selectedSubjectId: string | null;
 }) {
   const subject = useMemo(
@@ -101,6 +111,22 @@ function DetailsPanelSubject({
       tasks.filter((t) => t.subjectId === subject.id && t.status === 'pending'),
     );
   }, [subject, tasks]);
+
+  const subjectEvents = useMemo(() => {
+    if (!subject) return [];
+    return events
+      .filter((e) => e.subjectId === subject.id)
+      .sort((a, b) => {
+        if (a.eventDate !== b.eventDate) {
+          return a.eventDate < b.eventDate ? -1 : 1;
+        }
+        // null startTime sorts last.
+        if (a.startTime === b.startTime) return 0;
+        if (a.startTime === null) return 1;
+        if (b.startTime === null) return -1;
+        return a.startTime < b.startTime ? -1 : 1;
+      });
+  }, [subject, events]);
 
   if (!subject) {
     return (
@@ -127,6 +153,7 @@ function DetailsPanelSubject({
         )}
       </h2>
 
+      <h3 style={groupHeadingStyle}>Pending tasks</h3>
       {pending.length === 0 ? (
         <p className="muted" style={{ color: 'var(--muted)' }}>
           No pending tasks for this subject.
@@ -162,6 +189,42 @@ function DetailsPanelSubject({
           })}
         </ul>
       )}
+
+      <h3 style={groupHeadingStyle}>Events</h3>
+      {subjectEvents.length === 0 ? (
+        <p className="muted" style={{ color: 'var(--muted)' }}>
+          No events for this subject.
+        </p>
+      ) : (
+        <ul style={listStyle}>
+          {subjectEvents.map((ev) => {
+            const timeLabel =
+              ev.startTime == null
+                ? ''
+                : ev.endTime == null
+                  ? ` · ${hhmm(ev.startTime)}`
+                  : ` · ${hhmm(ev.startTime)}–${hhmm(ev.endTime)}`;
+            return (
+              <li key={ev.id} style={itemStyle}>
+                <div style={titleRowStyle}>
+                  <span style={eventTitleRowStyle}>
+                    <EventBadge type={ev.type} />
+                    <span style={{ fontWeight: 600 }}>{ev.title}</span>
+                  </span>
+                </div>
+                <p
+                  className="muted"
+                  style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--muted)' }}
+                >
+                  {ev.eventDate}
+                  {timeLabel}
+                  {ev.location ? ` · ${ev.location}` : ''}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
@@ -174,6 +237,22 @@ const sectionStyle: React.CSSProperties = {
 const headingStyle: React.CSSProperties = {
   fontSize: '1rem',
   marginTop: 0,
+};
+
+const groupHeadingStyle: React.CSSProperties = {
+  fontSize: '0.8125rem',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.03em',
+  color: 'var(--muted)',
+  margin: '1rem 0 0.5rem',
+};
+
+const eventTitleRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  flexWrap: 'wrap',
 };
 
 const listStyle: React.CSSProperties = {

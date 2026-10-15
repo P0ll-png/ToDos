@@ -151,6 +151,7 @@ export function Layout() {
           <DetailsPanel
             subjects={subjects}
             tasks={tasksState.data}
+            events={eventsState.data}
             selectedSubjectId={selectedSubjectId}
             selectedDay={view === 'month' ? selectedDay : null}
             dayItems={dayItems}
