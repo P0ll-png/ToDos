@@ -11,19 +11,16 @@
  *    subject_ids contains S (an "All classes" request matches EVERY subject);
  *  - student-name text, case-insensitive over the embedded studentName.
  *
- * Attachments open via a freshly minted signed URL on click
- * (signedUrlFor('excuse-attachments', path)): the default inline disposition
- * opens in a new tab for preview; an optional "Save a copy" re-mints with
- * { download: file_name }. A per-row busy/error state covers mint latency and a
- * denial (a wrong path yields an inline access error, not a file).
+ * Each request may carry an optional evidence link (request.evidenceUrl). It is
+ * rendered as a safe external anchor (target="_blank" rel="noopener noreferrer")
+ * when present; the officer sees it under the same owner-or-officer rule the
+ * request already uses (ar_select). Nothing is rendered when it is null.
  *
  * The status <select> + remark <textarea> are saved via updateAbsenceStatus;
  * after a save the parent's pending-count refetch is triggered.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type {
-  AbsenceAttachment,
-  AbsenceAttachmentRow,
   AbsenceReason,
   AbsenceRequest,
   AbsenceStatus,
@@ -31,13 +28,7 @@ import type {
 } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
 import { rangeOverlaps } from '../lib/datewindow';
-import { supabase } from '../lib/supabase';
-import {
-  MUTATION_MESSAGES,
-  SIGNED_URL_MESSAGES,
-  signedUrlFor,
-  updateAbsenceStatus,
-} from '../data/mutations';
+import { MUTATION_MESSAGES, updateAbsenceStatus } from '../data/mutations';
 import { StatusBadge } from './StatusBadge';
 
 const REASON_LABELS: Record<AbsenceReason, string> = {
@@ -204,65 +195,6 @@ function InboxRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Attachments for this request are loaded on demand (one query per row).
-  const [attachments, setAttachments] = useState<AbsenceAttachment[] | null>(
-    null,
-  );
-  const [attachError, setAttachError] = useState<string | null>(null);
-  const [fileBusy, setFileBusy] = useState<string | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      if (!supabase) {
-        setAttachments([]);
-        return;
-      }
-      const { data, error: err } = await supabase
-        .from('absence_attachments')
-        .select('*')
-        .eq('request_id', request.id);
-      if (!active) return;
-      if (err) {
-        setAttachError('Could not load attachments.');
-        setAttachments([]);
-        return;
-      }
-      setAttachments(
-        (data as AbsenceAttachmentRow[]).map((a) => ({
-          id: a.id,
-          requestId: a.request_id,
-          storagePath: a.storage_path,
-          fileName: a.file_name,
-          mimeType: a.mime_type,
-          sizeBytes: a.size_bytes,
-        })),
-      );
-    }
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [request.id]);
-
-  async function openAttachment(
-    att: AbsenceAttachment,
-    download: boolean,
-  ) {
-    setFileBusy(att.id);
-    setFileError(null);
-    const result = await signedUrlFor('excuse-attachments', att.storagePath, {
-      download: download ? att.fileName : false,
-    });
-    setFileBusy(null);
-    if (!result.ok) {
-      setFileError(SIGNED_URL_MESSAGES[result.error]);
-      return;
-    }
-    window.open(result.url, '_blank', 'noopener,noreferrer');
-  }
-
   async function handleSave() {
     setBusy(true);
     setError(null);
@@ -305,54 +237,21 @@ function InboxRow({
         <p style={{ margin: '0.4rem 0 0' }}>{request.explanation}</p>
       )}
 
-      <div style={{ marginTop: '0.5rem' }}>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--muted)' }}>
-          Attachments:{' '}
-        </span>
-        {attachments == null ? (
-          <span style={{ color: 'var(--muted)' }}>Loading…</span>
-        ) : attachments.length === 0 ? (
-          <span style={{ color: 'var(--muted)' }}>None</span>
-        ) : (
-          <ul style={attachListStyle}>
-            {attachments.map((a) => (
-              <li key={a.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => openAttachment(a, false)}
-                  disabled={fileBusy === a.id}
-                  style={linkButtonStyle}
-                >
-                  {a.fileName}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openAttachment(a, true)}
-                  disabled={fileBusy === a.id}
-                  style={subtleButtonStyle}
-                >
-                  Save a copy
-                </button>
-                {fileBusy === a.id && (
-                  <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>
-                    Opening…
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {attachError && (
-          <span role="alert" style={{ color: 'var(--danger)', fontSize: '0.75rem' }}>
-            {attachError}
+      {request.evidenceUrl && (
+        <div style={{ marginTop: '0.5rem' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--muted)' }}>
+            Evidence:{' '}
           </span>
-        )}
-        {fileError && (
-          <p role="alert" style={{ margin: '0.25rem 0 0', color: 'var(--danger)', fontSize: '0.75rem' }}>
-            {fileError}
-          </p>
-        )}
-      </div>
+          <a
+            href={request.evidenceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={evidenceLinkStyle}
+          >
+            {request.evidenceUrl}
+          </a>
+        </div>
+      )}
 
       <div style={reviewRowStyle}>
         <label style={filterLabelStyle}>
@@ -447,15 +346,6 @@ const rowHeadStyle: React.CSSProperties = {
   gap: '0.5rem',
 };
 
-const attachListStyle: React.CSSProperties = {
-  listStyle: 'none',
-  margin: '0.25rem 0 0',
-  padding: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.25rem',
-};
-
 const reviewRowStyle: React.CSSProperties = {
   display: 'flex',
   gap: '0.75rem',
@@ -463,24 +353,11 @@ const reviewRowStyle: React.CSSProperties = {
   marginTop: '0.75rem',
 };
 
-const linkButtonStyle: React.CSSProperties = {
-  padding: 0,
-  background: 'transparent',
+const evidenceLinkStyle: React.CSSProperties = {
   color: 'var(--accent-text)',
-  border: 'none',
   textDecoration: 'underline',
-  font: 'inherit',
   fontSize: '0.875rem',
-};
-
-const subtleButtonStyle: React.CSSProperties = {
-  padding: '0.15rem 0.5rem',
-  background: 'transparent',
-  color: 'var(--text)',
-  border: '1px solid var(--border)',
-  borderRadius: 'calc(var(--radius) - 6px)',
-  font: 'inherit',
-  fontSize: '0.75rem',
+  wordBreak: 'break-all',
 };
 
 const accentButtonStyle: React.CSSProperties = {

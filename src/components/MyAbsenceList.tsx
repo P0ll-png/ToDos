@@ -96,6 +96,19 @@ function AbsenceRow({ request, subjectName, onChanged }: AbsenceRowProps) {
       {request.explanation && (
         <p style={{ margin: '0.4rem 0 0' }}>{request.explanation}</p>
       )}
+      {request.evidenceUrl && (
+        <div style={{ margin: '0.4rem 0 0', fontSize: '0.8125rem' }}>
+          <span style={{ color: 'var(--muted)' }}>Evidence: </span>
+          <a
+            href={request.evidenceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={evidenceLinkStyle}
+          >
+            Evidence link
+          </a>
+        </div>
+      )}
       {request.officerRemark && (
         <p
           style={{
@@ -154,6 +167,12 @@ const rowHeadStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: '0.5rem',
+};
+
+const evidenceLinkStyle: React.CSSProperties = {
+  color: 'var(--accent-text)',
+  textDecoration: 'underline',
+  wordBreak: 'break-all',
 };
 
 const dangerButtonStyle: React.CSSProperties = {

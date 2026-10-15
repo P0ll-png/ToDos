@@ -8,46 +8,30 @@
  *    all_classes and disables the multi-select;
  *  - a reason <select> whose option values match the DB absence_reason enum;
  *  - an explanation <textarea maxLength=500> with a live character counter;
- *  - a file input accepting up to 3 files, each validated by
- *    validateFile(EXCUSE_MIME, EXCUSE_MAX) with inline type/size errors.
+ *  - an OPTIONAL "evidence link" text input (any URL, e.g. a Google Drive
+ *    share link) with light client validation (trim; empty -> omitted;
+ *    otherwise must start with http:// or https://, else an inline error).
  *
- * Upload progress is an INDETERMINATE indicator only (a spinner + "Uploading…"
- * with the submit disabled) — byte-percent progress is out of scope because
- * @supabase/storage-js 2.45.4 upload() is fetch()-based with no progress
- * callback (design OD-5, Error handling → File upload).
+ * Submit flow: createAbsenceRequest writes the member-owned fields (the form
+ * never sends status/officer/review fields; the DB defaults supply
+ * status='pending'). The evidence link rides on the request row itself, so a
+ * successful insert completes the submit — there is no file upload step.
  *
- * Submit flow: createAbsenceRequest first (DB defaults supply status='pending';
- * the form never sends status/officer/review fields), then for each file upload
- * to {user_id}/{request_id}/{safeName} and insert its attachment row. On an
- * attachment failure the request is left pending (the member can delete it) and
- * the failing file is named inline.
- *
- * Shows the fixed privacy notice "Attachments are visible only to you and class
- * officers." (FR-4.10). Colors come only from tokens.
+ * Shows the fixed privacy notice "Your evidence link is visible only to you and
+ * class officers." (FR-4.10). Colors come only from tokens.
  */
 import { useState, type FormEvent } from 'react';
 import type { AbsenceReason, Subject } from '../lib/types';
 import { useSession } from '../context/SessionProvider';
 import { isValidRange } from '../lib/datewindow';
-import {
-  EXCUSE_MAX,
-  EXCUSE_MIME,
-  buildStoragePath,
-  validateFile,
-} from '../lib/storage';
-import {
-  MUTATION_MESSAGES,
-  addAbsenceAttachment,
-  createAbsenceRequest,
-} from '../data/mutations';
+import { MUTATION_MESSAGES, createAbsenceRequest } from '../data/mutations';
 import { CalendarField } from './CalendarField';
 
 const EXPLANATION_MAX = 500;
-const MAX_FILES = 3;
 
-/** The fixed privacy notice shown under the attachments field (FR-4.10). */
+/** The fixed privacy notice shown under the evidence-link field (FR-4.10). */
 export const PRIVACY_NOTICE =
-  'Attachments are visible only to you and class officers.';
+  'Your evidence link is visible only to you and class officers.';
 
 /** Reason option values MUST match the DB absence_reason enum verbatim. */
 const REASON_OPTIONS: { value: AbsenceReason; label: string }[] = [
@@ -56,6 +40,19 @@ const REASON_OPTIONS: { value: AbsenceReason; label: string }[] = [
   { value: 'school_related_activity', label: 'School-related activity' },
   { value: 'other', label: 'Other' },
 ];
+
+/**
+ * Light client-side validation for the optional evidence link. An empty/
+ * whitespace-only value is valid (the link is optional). A non-empty value must
+ * look like an http(s) URL — this is a UX fast-path, the DB CHECK is the
+ * backstop. Module-local (not exported) so this file keeps exporting only the
+ * component + the PRIVACY_NOTICE const.
+ */
+function isValidEvidenceUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (trimmed === '') return true;
+  return /^https?:\/\//i.test(trimmed);
+}
 
 interface AbsenceFormProps {
   subjects: Subject[];
@@ -71,19 +68,19 @@ export function AbsenceForm({ subjects, onSubmitted }: AbsenceFormProps) {
   const [allClasses, setAllClasses] = useState(false);
   const [reason, setReason] = useState<AbsenceReason>('illness');
   const [explanation, setExplanation] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
-  const [fileError, setFileError] = useState<string | null>(null);
+  const [evidenceUrl, setEvidenceUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const rangeValid = isValidRange(dateFrom, dateTo);
   const scopeValid = allClasses || selectedSubjects.length >= 1;
   const explanationValid = explanation.length <= EXPLANATION_MAX;
+  const evidenceValid = isValidEvidenceUrl(evidenceUrl);
   const canSubmit =
     rangeValid &&
     scopeValid &&
     explanationValid &&
-    fileError == null &&
+    evidenceValid &&
     !busy &&
     Boolean(profile?.id);
 
@@ -93,42 +90,14 @@ export function AbsenceForm({ subjects, onSubmitted }: AbsenceFormProps) {
     );
   }
 
-  function onFilesPicked(fileList: FileList | null) {
-    setFileError(null);
-    if (!fileList) {
-      setFiles([]);
-      return;
-    }
-    const picked = Array.from(fileList);
-    if (picked.length > MAX_FILES) {
-      setFileError(`Up to ${MAX_FILES} files only.`);
-      setFiles([]);
-      return;
-    }
-    for (const f of picked) {
-      const result = validateFile(
-        { type: f.type, size: f.size, name: f.name },
-        EXCUSE_MIME,
-        EXCUSE_MAX,
-      );
-      if (!result.ok) {
-        setFileError(
-          result.reason === 'type'
-            ? `"${f.name}": PDF, JPG or PNG only.`
-            : `"${f.name}": max 5 MB.`,
-        );
-        setFiles([]);
-        return;
-      }
-    }
-    setFiles(picked);
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit || !profile) return;
     setBusy(true);
     setError(null);
+
+    const trimmed = evidenceUrl.trim();
+    const link = trimmed === '' ? undefined : trimmed;
 
     const created = await createAbsenceRequest({
       userId: profile.id,
@@ -138,45 +107,22 @@ export function AbsenceForm({ subjects, onSubmitted }: AbsenceFormProps) {
       allClasses,
       reasonCategory: reason,
       explanation,
+      evidenceUrl: link,
     });
-    if (!created.ok || !created.id) {
+    if (!created.ok) {
       if (created.error) setError(MUTATION_MESSAGES[created.error]);
       setBusy(false);
       return;
     }
 
-    const requestId = created.id;
-    for (const file of files) {
-      const path = buildStoragePath(profile.id, requestId, file.name);
-      const result = await addAbsenceAttachment({
-        requestId,
-        path,
-        file,
-        fileName: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-      });
-      if (!result.ok) {
-        // The request row exists and is pending — the member can delete and
-        // retry. Surface which file failed and stop.
-        setError(
-          `Couldn't upload "${file.name}". Your request was saved as pending; ` +
-            'you can delete it and try again.',
-        );
-        setBusy(false);
-        onSubmitted();
-        return;
-      }
-    }
-
-    // Reset the form on full success.
+    // Reset the form on success.
     setDateFrom('');
     setDateTo('');
     setSelectedSubjects([]);
     setAllClasses(false);
     setReason('illness');
     setExplanation('');
-    setFiles([]);
+    setEvidenceUrl('');
     setBusy(false);
     onSubmitted();
   }
@@ -278,39 +224,26 @@ export function AbsenceForm({ subjects, onSubmitted }: AbsenceFormProps) {
         />
       </label>
 
-      <div style={fieldStyle}>
-        <span style={labelStyle}>Attachments (optional, up to 3)</span>
+      <label style={fieldStyle}>
+        <span style={labelStyle}>Evidence link (optional)</span>
         <input
-          type="file"
-          multiple
-          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-          onChange={(e) => onFilesPicked(e.target.files)}
+          type="url"
+          inputMode="url"
+          value={evidenceUrl}
+          placeholder="https://drive.google.com/..."
+          onChange={(e) => setEvidenceUrl(e.target.value)}
           disabled={busy}
           style={inputStyle}
         />
-        {files.length > 0 && !fileError && (
-          <ul style={fileListStyle}>
-            {files.map((f) => (
-              <li key={f.name} style={{ color: 'var(--muted)' }}>
-                {f.name}
-                {busy && (
-                  <span style={{ marginLeft: '0.5rem' }}>
-                    <Spinner /> Uploading…
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {fileError && (
+        {!evidenceValid && (
           <p role="alert" style={hintError}>
-            {fileError}
+            Enter a link starting with http:// or https://
           </p>
         )}
         <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--muted)' }}>
           {PRIVACY_NOTICE}
         </p>
-      </div>
+      </label>
 
       {error && (
         <p role="alert" style={{ color: 'var(--danger)', margin: '0 0 0.75rem' }}>
@@ -397,12 +330,6 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid var(--border)',
   borderRadius: 'calc(var(--radius) - 4px)',
   font: 'inherit',
-};
-
-const fileListStyle: React.CSSProperties = {
-  margin: '0.5rem 0 0',
-  paddingLeft: '1.1rem',
-  fontSize: '0.8125rem',
 };
 
 const hintError: React.CSSProperties = {

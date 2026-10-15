@@ -31,13 +31,12 @@ const OFFICER_EMAIL = env.RLS_TEST_OFFICER_EMAIL;
 const OFFICER_PW = env.RLS_TEST_OFFICER_PASSWORD;
 const TARGET_ID = env.RLS_TEST_TARGET_PROFILE_ID;
 
-// Extension (0003) cases need a SECOND member (to prove one member cannot read
-// another's absence request/attachment) plus a seeded PENDING absence request
-// owned by the first member with one attachment. See SETUP.md section 7.
+// Extension (0003/0004) cases need a SECOND member (to prove one member cannot
+// read another's absence request) plus a seeded PENDING absence request owned by
+// the first member (ideally with an evidence_url). See SETUP.md section 7.
 const MEMBER2_EMAIL = env.RLS_TEST_MEMBER2_EMAIL;
 const MEMBER2_PW = env.RLS_TEST_MEMBER2_PASSWORD;
 const ABSENCE_REQUEST_ID = env.RLS_TEST_ABSENCE_REQUEST_ID;
-const ABSENCE_ATTACHMENT_ID = env.RLS_TEST_ABSENCE_ATTACHMENT_ID;
 
 const configured = Boolean(
   URL &&
@@ -54,11 +53,7 @@ const configured = Boolean(
 // so the base role-escalation suite can still run on a project without the
 // seeded absence fixtures.
 const extConfigured = Boolean(
-  configured &&
-    MEMBER2_EMAIL &&
-    MEMBER2_PW &&
-    ABSENCE_REQUEST_ID &&
-    ABSENCE_ATTACHMENT_ID,
+  configured && MEMBER2_EMAIL && MEMBER2_PW && ABSENCE_REQUEST_ID,
 );
 
 // Skip-with-reason: a visible, explained skip rather than a silent pass.
@@ -78,11 +73,11 @@ if (!configured) {
 } else if (!extConfigured) {
   // eslint-disable-next-line no-console
   console.warn(
-    'RLS extension (0003) suite SKIPPED: the 0003 fixtures are not set ' +
-      '(RLS_TEST_MEMBER2_EMAIL/_PASSWORD, RLS_TEST_ABSENCE_REQUEST_ID, ' +
-      'RLS_TEST_ABSENCE_ATTACHMENT_ID — a second member and a seeded pending ' +
-      'absence request + attachment owned by the first member). The base ' +
-      'role-escalation suite still runs. See SETUP.md section 7.',
+    'RLS extension (0003/0004) suite SKIPPED: the extension fixtures are not ' +
+      'set (RLS_TEST_MEMBER2_EMAIL/_PASSWORD, RLS_TEST_ABSENCE_REQUEST_ID — a ' +
+      'second member and a seeded pending absence request owned by the first ' +
+      'member). The base role-escalation suite still runs. See SETUP.md ' +
+      'section 7.',
   );
 }
 
@@ -268,24 +263,25 @@ describeLive('RLS policy boundary (live backend)', () => {
 });
 
 /**
- * Extension (0003) RLS boundary — the new tables (events, task_completions,
- * absence_requests, absence_attachments, reviewers) and the storage.objects
- * policies for the two private buckets. Proves AC1–AC3 and AC7–AC12 against the
- * live policies. Skipped (with its own reason) unless the 0003 fixtures are set.
+ * Extension (0003/0004) RLS boundary — the new tables (events, task_completions,
+ * absence_requests, reviewers) and the reviewers storage.objects policies.
+ * Proves AC1–AC3 and AC7–AC12 against the live policies, plus the 0004 evidence
+ * link: it is visible to the owner and officers but NOT to another member (it
+ * rides on the absence_requests row under ar_select). Skipped (with its own
+ * reason) unless the extension fixtures are set.
  *
  * Fixtures (SETUP.md section 7): a second member, and a seeded PENDING
- * absence_requests row owned by the FIRST member (RLS_TEST_ABSENCE_REQUEST_ID)
- * with one attachment (RLS_TEST_ABSENCE_ATTACHMENT_ID). This suite restores any
- * row it changes (it demotes the request back to pending in afterAll).
+ * absence_requests row owned by the FIRST member (RLS_TEST_ABSENCE_REQUEST_ID),
+ * ideally carrying an evidence_url. This suite restores any row it changes (it
+ * demotes the request back to pending in afterAll).
  */
-describeExt('RLS extension boundary — 0003 tables + storage (live backend)', () => {
+describeExt('RLS extension boundary — 0003/0004 tables + storage (live backend)', () => {
   let anon: SupabaseClient;
   let member: SupabaseClient;
   let memberId: string;
   let member2: SupabaseClient;
   let member2Id: string;
   let officer: SupabaseClient;
-  let seededStoragePath = '';
 
   beforeAll(async () => {
     anon = anonClient();
@@ -303,15 +299,6 @@ describeExt('RLS extension boundary — 0003 tables + storage (live backend)', (
       OFFICER_PW as string,
     );
     officer = o.client;
-
-    // Learn the seeded attachment's storage path (as the owning member) so the
-    // guessed-path and storage-object cases can target the real object.
-    const { data } = await member
-      .from('absence_attachments')
-      .select('storage_path')
-      .eq('id', ABSENCE_ATTACHMENT_ID as string)
-      .maybeSingle();
-    seededStoragePath = (data?.storage_path as string) ?? '';
   });
 
   afterAll(async () => {
@@ -337,7 +324,6 @@ describeExt('RLS extension boundary — 0003 tables + storage (live backend)', (
     for (const table of [
       'task_completions',
       'absence_requests',
-      'absence_attachments',
       'reviewers',
     ]) {
       const { data, error } = await anon.from(table).select('*').limit(1);
@@ -440,7 +426,7 @@ describeExt('RLS extension boundary — 0003 tables + storage (live backend)', (
 
   // ---- absences: owner-or-officer read; a second member sees nothing (AC7) ----
 
-  it('member reads OWN absence request; a SECOND member is denied it (AC7)', async () => {
+  it('member reads OWN absence request + evidence_url; a SECOND member is denied it (AC7)', async () => {
     const own = await member
       .from('absence_requests')
       .select('*')
@@ -448,6 +434,26 @@ describeExt('RLS extension boundary — 0003 tables + storage (live backend)', (
       .maybeSingle();
     expect(own.error, 'owning member read own request').toBeNull();
     expect(own.data, 'owning member sees the request').toBeTruthy();
+    // 0004: evidence_url is a column on the request row, so the owner sees it
+    // (its value depends on the seeded fixture — the key is the field is
+    // present/readable, not NULL by policy).
+    expect(
+      Object.prototype.hasOwnProperty.call(own.data ?? {}, 'evidence_url'),
+      'owner read includes the evidence_url column',
+    ).toBe(true);
+
+    // An officer sees the SAME row (owner-or-officer) including evidence_url.
+    const officerView = await officer
+      .from('absence_requests')
+      .select('*')
+      .eq('id', ABSENCE_REQUEST_ID as string)
+      .maybeSingle();
+    expect(officerView.error, 'officer read any request').toBeNull();
+    expect(officerView.data, 'officer sees the request').toBeTruthy();
+    expect(
+      Object.prototype.hasOwnProperty.call(officerView.data ?? {}, 'evidence_url'),
+      'officer read includes the evidence_url column',
+    ).toBe(true);
 
     const other = await member2
       .from('absence_requests')
@@ -455,158 +461,8 @@ describeExt('RLS extension boundary — 0003 tables + storage (live backend)', (
       .eq('id', ABSENCE_REQUEST_ID as string)
       .maybeSingle();
     // ar_select is owner-or-officer: a second member matches no row (null), and
-    // never gets another member's data.
-    expect(other.data, 'second member must NOT see the request').toBeNull();
-  });
-
-  it('a SECOND member is denied the attachment ROW, a guessed storage PATH; officer reads both (AC7)', async () => {
-    // Row: aa_select derives from the parent — a non-owner gets zero rows.
-    const otherRow = await member2
-      .from('absence_attachments')
-      .select('*')
-      .eq('id', ABSENCE_ATTACHMENT_ID as string)
-      .maybeSingle();
-    expect(otherRow.data, 'second member must NOT see the attachment row').toBeNull();
-
-    // Guessed storage path: even with the exact path, the storage SELECT policy
-    // (ea_select_own / ea_select_officer) denies the mint for a non-owner.
-    if (seededStoragePath) {
-      const guessed = await member2.storage
-        .from('excuse-attachments')
-        .createSignedUrl(seededStoragePath, 60);
-      expect(
-        guessed.error,
-        'second member signed-URL mint on a guessed path must be denied',
-      ).not.toBeNull();
-
-      // The owning member CAN mint it.
-      const ownMint = await member.storage
-        .from('excuse-attachments')
-        .createSignedUrl(seededStoragePath, 60);
-      expect(ownMint.error, 'owning member mint').toBeNull();
-
-      // An officer can read ALL attachments (row) and mint the object.
-      const officerMint = await officer.storage
-        .from('excuse-attachments')
-        .createSignedUrl(seededStoragePath, 60);
-      expect(officerMint.error, 'officer mint any attachment').toBeNull();
-    }
-
-    // Officer can read the attachment ROW too.
-    const officerRow = await officer
-      .from('absence_attachments')
-      .select('*')
-      .eq('id', ABSENCE_ATTACHMENT_ID as string)
-      .maybeSingle();
-    expect(officerRow.error, 'officer read attachment row').toBeNull();
-    expect(officerRow.data, 'officer sees the attachment row').toBeTruthy();
-  });
-
-  // ---- ea_insert gate: own-folder + owned + PENDING parent ----
-
-  it("member cannot upload an attachment object under ANOTHER member's folder (ea_insert)", async () => {
-    const path = `${member2Id}/${ABSENCE_REQUEST_ID}/forged.pdf`;
-    const up = await member.storage
-      .from('excuse-attachments')
-      .upload(path, new Blob(['x'], { type: 'application/pdf' }), {
-        contentType: 'application/pdf',
-      });
-    expect(up.error, "upload under another member's folder must be denied").not.toBeNull();
-  });
-
-  it('member cannot upload an attachment object under a NON-EXISTENT request (ea_insert)', async () => {
-    const path = `${memberId}/${NONEXISTENT_UUID}/forged.pdf`;
-    const up = await member.storage
-      .from('excuse-attachments')
-      .upload(path, new Blob(['x'], { type: 'application/pdf' }), {
-        contentType: 'application/pdf',
-      });
-    expect(up.error, 'upload under a non-existent request must be denied').not.toBeNull();
-  });
-
-  it('member CAN upload under a still-PENDING own request, but NOT once ACKNOWLEDGED (ea_insert)', async () => {
-    // Pending: upload succeeds (the seeded request is pending).
-    const okPath = `${memberId}/${ABSENCE_REQUEST_ID}/rls-ea-insert-ok.pdf`;
-    const okUp = await member.storage
-      .from('excuse-attachments')
-      .upload(okPath, new Blob(['x'], { type: 'application/pdf' }), {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-    expect(okUp.error, 'upload under own PENDING request should succeed').toBeNull();
-    // Clean up the test object.
-    await member.storage.from('excuse-attachments').remove([okPath]);
-
-    // Acknowledge the request (officer), then the member upload must be denied.
-    const ack = await officer
-      .from('absence_requests')
-      .update({ status: 'acknowledged', reviewed_by: null })
-      .eq('id', ABSENCE_REQUEST_ID as string);
-    expect(ack.error, 'officer acknowledge request').toBeNull();
-
-    const deniedPath = `${memberId}/${ABSENCE_REQUEST_ID}/rls-ea-insert-denied.pdf`;
-    const deniedUp = await member.storage
-      .from('excuse-attachments')
-      .upload(deniedPath, new Blob(['x'], { type: 'application/pdf' }), {
-        contentType: 'application/pdf',
-      });
-    expect(
-      deniedUp.error,
-      'upload under an ACKNOWLEDGED request must be denied',
-    ).not.toBeNull();
-
-    // Restore to pending for other cases / re-runnability.
-    await officer
-      .from('absence_requests')
-      .update({ status: 'pending' })
-      .eq('id', ABSENCE_REQUEST_ID as string);
-  });
-
-  // ---- aa_delete + ea_delete_own: delete only while PENDING (AC9) ----
-
-  it('member cannot delete the attachment ROW or its storage OBJECT once not PENDING (AC9)', async () => {
-    // Acknowledge first.
-    await officer
-      .from('absence_requests')
-      .update({ status: 'acknowledged' })
-      .eq('id', ABSENCE_REQUEST_ID as string);
-
-    const rowDel = await member
-      .from('absence_attachments')
-      .delete()
-      .eq('id', ABSENCE_ATTACHMENT_ID as string);
-    // aa_delete USING fails -> no row matched -> no error but nothing deleted.
-    // Confirm the row still exists (owner can still read it).
-    const stillThere = await member
-      .from('absence_attachments')
-      .select('id')
-      .eq('id', ABSENCE_ATTACHMENT_ID as string)
-      .maybeSingle();
-    expect(
-      rowDel.error != null || stillThere.data != null,
-      'attachment row must survive a delete attempt once not pending',
-    ).toBe(true);
-
-    if (seededStoragePath) {
-      const objDel = await member.storage
-        .from('excuse-attachments')
-        .remove([seededStoragePath]);
-      // ea_delete_own requires a pending parent; once acknowledged the delete is
-      // denied (error) or removes nothing. Prove the object is still mintable.
-      const stillMintable = await member.storage
-        .from('excuse-attachments')
-        .createSignedUrl(seededStoragePath, 60);
-      expect(
-        objDel.error != null || stillMintable.error == null,
-        'attachment object must survive a delete attempt once not pending',
-      ).toBe(true);
-    }
-
-    // Restore to pending.
-    await officer
-      .from('absence_requests')
-      .update({ status: 'pending' })
-      .eq('id', ABSENCE_REQUEST_ID as string);
+    // never gets another member's data — including the evidence_url.
+    expect(other.data, 'second member must NOT see the request or its link').toBeNull();
   });
 
   // ---- reviewers: any authenticated read/download; non-owner delete denied (AC11/12) ----

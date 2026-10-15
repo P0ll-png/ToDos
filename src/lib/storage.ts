@@ -7,13 +7,8 @@
  * migration, so client-side validation is a UX fast-path, not the sole gate.
  */
 
-/** Signed URLs for private attachments are short-lived (seconds). */
+/** Signed URLs for private files are short-lived (seconds). */
 export const SIGNED_URL_TTL_SECONDS = 60;
-
-/** Allowed MIME types for excuse attachments. */
-export const EXCUSE_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
-/** Max size for an excuse attachment: 5 MB. */
-export const EXCUSE_MAX = 5 * 1024 * 1024;
 
 /** Allowed MIME types for a reviewer upload (PDF, DOCX, PPTX, JPG, PNG). */
 export const REVIEWER_MIME = [

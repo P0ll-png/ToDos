@@ -307,12 +307,14 @@ interface CreateAbsenceRequestInput {
   allClasses: boolean;
   reasonCategory: AbsenceReason;
   explanation?: string;
+  /** Optional evidence link (any URL). Omitted / null stores NULL. */
+  evidenceUrl?: string | null;
 }
 
 /**
- * The create result carries the new request id so the caller can upload
- * attachments into {user_id}/{request_id}/... AFTER the row exists (the storage
- * ea_insert WITH CHECK requires the parent request to exist and be pending).
+ * The create result carries the new request id for the caller's convenience
+ * (e.g. a follow-up read or future use). It is no longer used to upload
+ * attachments — the evidence link rides on the request row itself.
  */
 export interface CreateAbsenceResult extends MutationResult {
   id?: string;
@@ -321,11 +323,12 @@ export interface CreateAbsenceResult extends MutationResult {
 /**
  * createAbsenceRequest — member insert. It writes ONLY the member-owned fields
  * (user_id, date_from, date_to, subject_ids, all_classes, reason_category,
- * explanation) and NEVER status/officer_remark/reviewed_by/reviewed_at: the DB
- * defaults supply status='pending' and leave the officer/review fields NULL, so
- * ar_insert's WITH CHECK (user_id = auth.uid() and status = 'pending') is always
- * satisfied for a legitimate submit. Returns the new id (via `select`) so the
- * caller can upload attachments into the deterministic path afterwards.
+ * explanation, evidence_url) and NEVER status/officer_remark/reviewed_by/
+ * reviewed_at: the DB defaults supply status='pending' and leave the
+ * officer/review fields NULL, so ar_insert's WITH CHECK
+ * (user_id = auth.uid() and status = 'pending') is always satisfied for a
+ * legitimate submit. Returns the new id (via `select`) for the caller's
+ * convenience.
  */
 export async function createAbsenceRequest(
   input: CreateAbsenceRequestInput,
@@ -341,48 +344,12 @@ export async function createAbsenceRequest(
       all_classes: input.allClasses,
       reason_category: input.reasonCategory,
       explanation: input.explanation ?? '',
+      evidence_url: input.evidenceUrl ?? null,
     })
     .select('id')
     .single();
   if (error) return { ok: false, error: classify(error) };
   return { ok: true, id: (data as { id: string }).id };
-}
-
-export interface UploadAttachmentInput {
-  requestId: string;
-  path: string; // {user_id}/{request_id}/{safeName}
-  file: File;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-}
-
-/**
- * addAbsenceAttachment — uploads a single file to the PRIVATE
- * 'excuse-attachments' bucket AFTER the request row exists, then inserts the
- * attachment row. If the storage upload fails the attachment row is NOT
- * inserted and the error is surfaced; the already-created request is left
- * pending so the member can delete it. The bucket's MIME/size config is the
- * server backstop in addition to the client-side validateFile fast-path.
- */
-export async function addAbsenceAttachment(
-  input: UploadAttachmentInput,
-): Promise<MutationResult> {
-  if (!supabase) return { ok: false, error: 'not-configured' };
-  const upload = await supabase.storage
-    .from('excuse-attachments')
-    .upload(input.path, input.file, { contentType: input.mimeType });
-  if (upload.error) {
-    return { ok: false, error: classify(upload.error as { message?: string }) };
-  }
-  const { error } = await supabase.from('absence_attachments').insert({
-    request_id: input.requestId,
-    storage_path: input.path,
-    file_name: input.fileName,
-    mime_type: input.mimeType,
-    size_bytes: input.sizeBytes,
-  });
-  return error ? { ok: false, error: classify(error) } : { ok: true };
 }
 
 interface UpdateAbsenceStatusInput {
@@ -416,8 +383,8 @@ export async function updateAbsenceStatus(
 /**
  * deleteAbsenceRequest — member-while-pending path. RLS (ar_delete_member)
  * enforces the own-and-pending window; the UI hides delete once not pending as
- * convenience only. Attachment rows and their storage objects cascade/clean up
- * per the migration's ON DELETE CASCADE on absence_attachments.
+ * convenience only. The evidence link is a column on the request row, so it is
+ * removed with the row — there is nothing else to clean up.
  */
 export async function deleteAbsenceRequest(id: string): Promise<MutationResult> {
   if (!supabase) return { ok: false, error: 'not-configured' };

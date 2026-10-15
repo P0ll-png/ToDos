@@ -3,34 +3,34 @@ import {
   validateFile,
   sanitizeFileName,
   buildStoragePath,
-  EXCUSE_MIME,
-  EXCUSE_MAX,
+  REVIEWER_MIME,
+  REVIEWER_MAX,
 } from './storage';
 
 describe('validateFile', () => {
   it('rejects a disallowed type', () => {
     const result = validateFile(
       { type: 'application/zip', size: 10, name: 'a.zip' },
-      EXCUSE_MIME,
-      EXCUSE_MAX,
+      REVIEWER_MIME,
+      REVIEWER_MAX,
     );
     expect(result).toEqual({ ok: false, reason: 'type' });
   });
 
   it('rejects a file one byte over the limit', () => {
     const result = validateFile(
-      { type: 'application/pdf', size: EXCUSE_MAX + 1, name: 'a.pdf' },
-      EXCUSE_MIME,
-      EXCUSE_MAX,
+      { type: 'application/pdf', size: REVIEWER_MAX + 1, name: 'a.pdf' },
+      REVIEWER_MIME,
+      REVIEWER_MAX,
     );
     expect(result).toEqual({ ok: false, reason: 'size' });
   });
 
   it('accepts a file exactly at the limit', () => {
     const result = validateFile(
-      { type: 'application/pdf', size: EXCUSE_MAX, name: 'a.pdf' },
-      EXCUSE_MIME,
-      EXCUSE_MAX,
+      { type: 'application/pdf', size: REVIEWER_MAX, name: 'a.pdf' },
+      REVIEWER_MIME,
+      REVIEWER_MAX,
     );
     expect(result).toEqual({ ok: true });
   });
@@ -38,8 +38,8 @@ describe('validateFile', () => {
   it('accepts an allowed type under the limit', () => {
     const result = validateFile(
       { type: 'image/png', size: 1024, name: 'a.png' },
-      EXCUSE_MIME,
-      EXCUSE_MAX,
+      REVIEWER_MIME,
+      REVIEWER_MAX,
     );
     expect(result).toEqual({ ok: true });
   });

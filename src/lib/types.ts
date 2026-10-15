@@ -190,6 +190,7 @@ export interface AbsenceRequestRow {
   officer_remark: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  evidence_url: string | null;
   created_at: string | null;
 }
 
@@ -203,32 +204,14 @@ export interface AbsenceRequest {
   allClasses: boolean;
   reasonCategory: AbsenceReason;
   explanation: string;
+  /** Optional evidence link (any URL, e.g. a Google Drive share link). */
+  evidenceUrl: string | null;
   status: AbsenceStatus;
   officerRemark: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
   /** Only populated by the officer inbox embed (student:profiles(name)). */
   studentName?: string;
-}
-
-/** absence_attachments row. */
-export interface AbsenceAttachmentRow {
-  id: string;
-  request_id: string;
-  storage_path: string;
-  file_name: string;
-  mime_type: string;
-  size_bytes: number;
-}
-
-/** Domain shape for an absence attachment (camelCase). */
-export interface AbsenceAttachment {
-  id: string;
-  requestId: string;
-  storagePath: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
 }
 
 // ============ reviewers (FEAT) ============

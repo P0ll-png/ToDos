@@ -51,33 +51,40 @@ Supabase **SQL editor** and run it, or apply it with the Supabase CLI
 The migration seeds **no** data — add subjects, schedule slots, and tasks
 yourself (via the app as an Officer, or directly in Supabase).
 
-## 2a. Apply the extension schema (0003) and create the storage buckets
+## 2a. Apply the extension schema (0003 + 0004) and create the storage bucket
 
-The extension adds events, a per-account task tracker, absences (with private
-attachments), and reviewers (shared study files). Two of these features store
-files in Supabase Storage. Buckets and their MIME/size limits are a **manual**
-step (they live in `storage.buckets` and are configured through the dashboard or
-Storage API, not hand-inserted); the `storage.objects` RLS policies are in the
-migration. **Create the buckets before applying 0003** so the policies and the
-first uploads have their buckets in place.
+The extension adds events, a per-account task tracker, absences (with an
+optional evidence link), and reviewers (shared study files). Only reviewers now
+stores files in Supabase Storage. The `reviewers` bucket and its MIME/size limit
+are a **manual** step (buckets live in `storage.buckets` and are configured
+through the dashboard or Storage API, not hand-inserted); the `storage.objects`
+RLS policies are in the migration. **Create the bucket before applying 0003** so
+the policies and the first uploads have their bucket in place.
 
-### Step 1 — create two PRIVATE storage buckets
+> **Absences no longer use file attachments.** `0004` removes the
+> `excuse-attachments` subsystem and replaces it with a single optional
+> `evidence_url` column on `absence_requests` (any URL, e.g. a Google Drive share
+> link), visible under the same owner-or-officer rule the request already uses.
+> If you are setting up a fresh project you do **not** need the
+> `excuse-attachments` bucket at all; if you applied `0003` previously, delete
+> that bucket from the dashboard after applying `0004` (see Step 4 below).
+
+### Step 1 — create the PRIVATE `reviewers` storage bucket
 
 In the dashboard under **Storage -> Buckets -> New bucket** (or via the CLI/API),
-create both with **public = off**:
+create it with **public = off**:
 
 | Bucket | Public | Allowed MIME types | File size limit |
 | --- | --- | --- | --- |
-| `excuse-attachments` | off | `application/pdf`, `image/jpeg`, `image/png` | `5 MB` |
 | `reviewers` | off | `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/vnd.openxmlformats-officedocument.presentationml.presentation`, `image/jpeg`, `image/png` | `20 MB` |
 
-> **Keep the bucket limits in lockstep with the DB CHECKs.** `0003` also enforces
-> MIME and size via `attach_mime`/`attach_size` (5 MB) and
-> `reviewer_mime`/`reviewer_size` (20 MB) CHECK constraints. The **bucket
-> `file_size_limit` is the authoritative byte cap** (it rejects the actual
-> uploaded bytes); the DB CHECK validates only the client-supplied `size_bytes`
-> metadata on the row. A dashboard-only change to a bucket limit would silently
-> diverge from the CHECK, so change both together.
+> **Keep the bucket limit in lockstep with the DB CHECK.** `0003` also enforces
+> MIME and size via the `reviewer_mime`/`reviewer_size` (20 MB) CHECK
+> constraints. The **bucket `file_size_limit` is the authoritative byte cap** (it
+> rejects the actual uploaded bytes); the DB CHECK validates only the
+> client-supplied `size_bytes` metadata on the row. A dashboard-only change to
+> the bucket limit would silently diverge from the CHECK, so change both
+> together.
 
 ### Step 2 — apply `supabase/migrations/0003_classboard_ext.sql`
 
@@ -86,12 +93,14 @@ Paste it into the SQL editor and run it (or `supabase db push`). It creates:
 - enums `event_type`, `absence_reason`, `absence_status`;
 - tables `events`, `task_completions`, `absence_requests`,
   `absence_attachments`, `reviewers` (with the MIME/size/date-range/scope/time
-  CHECK constraints);
+  CHECK constraints). **Note:** `0004` later drops `absence_attachments`; on a
+  fresh setup it is created by `0003` and immediately removed by `0004`.
 - RLS on all five tables, with explicit `GRANT`s (no `anon` grant on
   `task_completions`, the absence tables, or `reviewers`) and named policies for
   `anon`/`authenticated`;
 - the four `excuse-attachments` and three `reviewers` policies on
-  `storage.objects`;
+  `storage.objects` (the four `excuse-attachments` policies are dropped by
+  `0004`);
 - the Realtime publication add for `events`, `task_completions`, `reviewers`,
   and `alter table public.task_completions replica identity full`.
 
@@ -99,25 +108,41 @@ It reuses the existing `public.is_officer()` helper and does **not** modify
 `0001_init.sql` or `0002_deadline_timestamptz.sql`. It seeds **no** data — no
 events and no reviewers are inserted; add those through the app.
 
-### Step 3 — privacy posture and signed URLs
+### Step 3 — apply `supabase/migrations/0004_absence_evidence_url.sql`
 
-- Both buckets are private. Downloads are served only through **short-lived
-  signed URLs** (TTL **60 s**) minted on demand per click — never public URLs.
-- Excuse attachments are stored under `{user_id}/{request_id}/filename` and are
-  visible **only to the uploading member and class officers**; the form shows
-  the notice "Attachments are visible only to you and class officers." A member
-  cannot read another member's attachment via the UI, the API, or a guessed
-  storage path (two independent layers: the `absence_attachments` row — and thus
-  its `storage_path` — is never disclosed to a non-owner, and even a guessed path
-  fails the storage SELECT policy).
-- Reviewers are stored under `{uploader_id}/{reviewer_id}/filename`; any
-  signed-in user may download, anon cannot (no anon storage policy).
+This is the forward migration for the absence **evidence link** change. Paste it
+into the SQL editor and run it (or `supabase db push`). It:
 
-### Step 4 — confirm anon has no bucket access
+- adds a nullable `evidence_url text` column to `absence_requests` (with a
+  permissive `http(s)` CHECK backstop);
+- drops the four `excuse-attachments` `storage.objects` policies and the
+  `absence_attachments` table (CASCADE removes its policies/grants).
 
-No `anon` storage policy is created for either bucket, so an anonymous visitor
-cannot mint a signed URL or read any object. Confirm by attempting an anonymous
-`createSignedUrl` against either bucket — it must be denied.
+It does **not** touch events, task_completions, reviewers, the `ar_*` policies,
+the realtime publication, or `0001`/`0002`/`0003` (which stay byte-for-byte
+unchanged). **Applying `0004` is the only DB step for the evidence-link change.**
+
+### Step 4 — privacy posture, signed URLs, and the evidence link
+
+- The `reviewers` bucket is private. Downloads are served only through
+  **short-lived signed URLs** (TTL **60 s**) minted on demand per click — never
+  public URLs. Reviewers are stored under `{uploader_id}/{reviewer_id}/filename`;
+  any signed-in user may download, anon cannot (no anon storage policy).
+- Absences carry an optional `evidence_url` on the request row (any URL, e.g. a
+  Google Drive share link). It is **not** a file upload and uses no bucket; its
+  visibility follows the request's own `ar_select` policy — readable by the
+  **owner and class officers only**, never by another member or anon. The form
+  shows the notice "Your evidence link is visible only to you and class
+  officers."
+- **Delete the `excuse-attachments` bucket** from the dashboard (Storage ->
+  Buckets) once `0004` is applied. Bucket rows are managed outside SQL, so the
+  migration cannot remove it. The `reviewers` bucket must be left intact.
+
+### Step 5 — confirm anon has no bucket access
+
+No `anon` storage policy is created for the `reviewers` bucket, so an anonymous
+visitor cannot mint a signed URL or read any object. Confirm by attempting an
+anonymous `createSignedUrl` against the bucket — it must be denied.
 
 ### Replica-identity note (task_completions)
 
@@ -253,22 +278,21 @@ RLS_TEST_TARGET_PROFILE_ID=<a third profile id the officer may promote/demote
                             and whose theme the officer must not overwrite>
 ```
 
-The extension (0003) RLS cases need a **second member account** (to prove one
-member cannot read another's absence request or attachment) and a seeded pending
-absence request owned by the first member with one attachment:
+The extension (0003/0004) RLS cases need a **second member account** (to prove
+one member cannot read another's absence request) and a seeded pending absence
+request owned by the first member (ideally carrying an `evidence_url`):
 
 ```
 RLS_TEST_MEMBER2_EMAIL=<a second seeded account whose role is 'member'>
 RLS_TEST_MEMBER2_PASSWORD=<...>
 RLS_TEST_ABSENCE_REQUEST_ID=<a pending absence_requests id owned by the first member>
-RLS_TEST_ABSENCE_ATTACHMENT_ID=<an absence_attachments id under that request>
 ```
 
 Create the member/officer accounts via the app, promote one with the
 officer-bootstrap SQL (section 4), pass a third profile id as the target, and —
 for the extension cases — create a second member and seed one pending absence
-request + attachment owned by the first member. The suite restores any row it
-changes.
+request owned by the first member (optionally with an evidence link). The suite
+restores any row it changes.
 
 ### Manual run (curl)
 
@@ -345,15 +369,13 @@ curl -s -X PATCH "$BASE/profiles?id=eq.$TARGET_ID" -H "apikey: $ANON" \
 ### Extension (0003) cases — manual curl
 
 These mirror the automated extension suite
-(`RLS extension boundary — 0003 tables + storage`). Set the extra shell vars
-first (grab the second member's JWT the same way as the others):
+(`RLS extension boundary — 0003/0004 tables + storage`). Set the extra shell
+vars first (grab the second member's JWT the same way as the others):
 
 ```bash
 MEMBER2_JWT=<second member access token>
 MEMBER2_ID=<second member profile id>
 REQ_ID=<a pending absence_requests id owned by the first member>
-ATT_ID=<an absence_attachments id under that request>
-ATT_PATH=<that attachment's storage_path, e.g. $MEMBER_ID/$REQ_ID/cert.pdf>
 STORAGE=https://<ref>.supabase.co/storage/v1
 ```
 
@@ -391,49 +413,28 @@ curl -s -X POST "$BASE/task_completions" -H "apikey: $ANON" \
   -d '{"user_id":"'$MEMBER2_ID'","task_id":"<any task id>"}'
 ```
 
-Absence privacy (AC7) — the second member sees neither the request nor the
-attachment row, and cannot mint the file's signed URL; the officer reads all:
+Absence privacy (AC7) — the second member cannot read the first member's
+request (and therefore never sees its `evidence_url`); the owner and an officer
+both read the row, `evidence_url` included:
 
 ```bash
-# owner reads own request (expect the row); member2 reads it (expect [])
-curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*" -H "apikey: $ANON" \
+# owner reads own request incl. evidence_url (expect the row); member2 (expect [])
+curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*,evidence_url" -H "apikey: $ANON" \
   -H "Authorization: Bearer $MEMBER_JWT"
-curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*" -H "apikey: $ANON" \
+curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*,evidence_url" -H "apikey: $ANON" \
   -H "Authorization: Bearer $MEMBER2_JWT"            # expect []
-# member2 reads the attachment row (expect []); officer reads it (expect the row)
-curl -s "$BASE/absence_attachments?id=eq.$ATT_ID&select=*" -H "apikey: $ANON" \
-  -H "Authorization: Bearer $MEMBER2_JWT"            # expect []
-curl -s "$BASE/absence_attachments?id=eq.$ATT_ID&select=*" -H "apikey: $ANON" \
+# officer reads it too (owner-or-officer), evidence_url included
+curl -s "$BASE/absence_requests?id=eq.$REQ_ID&select=*,evidence_url" -H "apikey: $ANON" \
   -H "Authorization: Bearer $OFFICER_JWT"
-# member2 mints a signed URL on the guessed path (expect an error, not a URL)
-curl -s -X POST "$STORAGE/object/sign/excuse-attachments/$ATT_PATH" \
-  -H "apikey: $ANON" -H "Authorization: Bearer $MEMBER2_JWT" \
-  -H "Content-Type: application/json" -d '{"expiresIn":60}'
 ```
 
-Attachment storage INSERT gate (`ea_insert`) — denied under another member's
-folder, a non-existent request, or an acknowledged own request; allowed only
-under a still-pending own request:
+Edit/delete only while pending (AC9) and the pending-count query (AC10):
 
 ```bash
-# under member2's folder (expect denied)
-curl -s -X POST "$STORAGE/object/excuse-attachments/$MEMBER2_ID/$REQ_ID/x.pdf" \
-  -H "apikey: $ANON" -H "Authorization: Bearer $MEMBER_JWT" \
-  -F file=@cert.pdf
-```
-
-Edit/delete only while pending (AC9) — acknowledge the request as the officer,
-then confirm the member can no longer delete the attachment row or object; the
-pending-count query returns the live count (AC10):
-
-```bash
+# officer acknowledges, then restores to pending (re-runnable)
 curl -s -X PATCH "$BASE/absence_requests?id=eq.$REQ_ID" -H "apikey: $ANON" \
   -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
   -d '{"status":"acknowledged"}'
-# member delete the attachment row now (expect nothing deleted — USING fails)
-curl -s -X DELETE "$BASE/absence_attachments?id=eq.$ATT_ID" -H "apikey: $ANON" \
-  -H "Authorization: Bearer $MEMBER_JWT"
-# restore to pending afterwards
 curl -s -X PATCH "$BASE/absence_requests?id=eq.$REQ_ID" -H "apikey: $ANON" \
   -H "Authorization: Bearer $OFFICER_JWT" -H "Content-Type: application/json" \
   -d '{"status":"pending"}'

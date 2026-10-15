@@ -1,0 +1,16 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "NIT",
+      "detail": "Three pre-existing react-refresh/only-export-components ESLint WARNINGS remain (SessionProvider, ThemeProvider, and the newly added NavProvider which follows the same established context pattern). These are warnings, not errors; lint exits 0. No action required to ship; if ever cleaned up, extract the shared constant/hook out of each provider file.",
+      "location": "src/context/NavProvider.tsx:38, src/context/SessionProvider.tsx:180, src/context/ThemeProvider.tsx:163"
+    },
+    {
+      "severity": "NIT",
+      "detail": "Realtime INSERT payload for reviewers does not carry the uploader name embed, so a freshly streamed reviewer card shows 'Unknown' uploader until the next focus/poll refetch fills it. Already documented as acceptable in FEAT-006 findings; no change needed.",
+      "location": "src/data/useReviewers.ts"
+    }
+  ],
+  "summary": "Final review of the classboard-ext diff (origin/main..HEAD, 69 files) against the final design.md and requirements.md, cross-checked with the FEAT-001..006 verification evidence. RLS is the sole authorization boundary throughout: 0003 grants + table policies enforce officer-only event writes (events_write is_officer()), self-only task_completions (own-row select/insert/delete, no UPDATE), owner-or-officer absence reads with member edit/delete gated to status='pending' (ar_* policies) and attachments deriving access from the parent via EXISTS (aa_*), and authenticated reviewer reads with owner-or-officer delete (rv_*). storage.objects policies mirror the table rules including the ea_insert and ea_delete_own pending EXISTS gate on segment [2] and own-folder [1]=auth.uid()::text; no anon grant or policy on task_completions, the absence tables, or reviewers. The 0003 migration matches the design exactly: three enums, five tables, all CHECKs with absence_scope using cardinality(subject_ids) (not array_length), the exact GRANTs with deliberate anon omissions, every named policy, the storage.objects policies, publication of events/task_completions/reviewers, and replica identity full on task_completions. 0001 and 0002 are untouched (confirmed via diff). Privacy embeds select name only and never email/profiles(*) (useAbsenceRequests officer embed disambiguated by FK constraint name student:profiles!absence_requests_user_id_fkey(name); useReviewers uploader:...(name)). Pure functions (derive.subjectGlows, events.hasUpcomingAssessment, calendar.buildMonthGrid/bucketItemsByDay/visibleWithOverflow, storage.validateFile/buildStoragePath, datewindow) are present with unit tests, and the AA harness palette-ext-aa.test.ts mirrors tokens.css hex values in both modes and asserts fg-on-bg + --task-done readability. Gate passes: typecheck 0 errors, lint 0 errors (3 pre-existing warnings), tests 168 passed / 22 skipped, build OK; the RLS integration suite skips cleanly locally with a printed reason (live-DB verification of the policies is an inherently backend step documented in SETUP.md section 7). No HIGH or MEDIUM findings; approving."
+}

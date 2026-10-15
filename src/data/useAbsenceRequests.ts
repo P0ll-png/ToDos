@@ -60,6 +60,7 @@ function rowToRequest(
     allClasses: row.all_classes,
     reasonCategory: row.reason_category,
     explanation: row.explanation,
+    evidenceUrl: row.evidence_url ?? null,
     status: row.status,
     officerRemark: row.officer_remark,
     reviewedBy: row.reviewed_by,
