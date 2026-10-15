@@ -179,11 +179,17 @@ const dayHeadStyle: React.CSSProperties = {
   fontSize: '0.8125rem',
   fontWeight: 600,
   padding: '0.25rem',
+  position: 'relative',
+  zIndex: 1,
 };
 
 const timeHeadStyle: React.CSSProperties = {
   ...dayHeadStyle,
   textAlign: 'left',
+  position: 'sticky',
+  left: 0,
+  background: 'var(--surface)',
+  zIndex: 3,
 };
 
 const timeCellStyle: React.CSSProperties = {
@@ -194,6 +200,10 @@ const timeCellStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
   verticalAlign: 'top',
   padding: '0.5rem 0.25rem',
+  position: 'sticky',
+  left: 0,
+  background: 'var(--surface)',
+  zIndex: 2,
 };
 
 const cellStyle: React.CSSProperties = {
