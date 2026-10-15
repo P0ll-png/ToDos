@@ -24,3 +24,7 @@ pnpm-debug.log*
 # Vite / tooling cache
 .vite/
 coverage/
+
+# Workflow artifacts and worktrees
+.agents/
+.worktrees/
