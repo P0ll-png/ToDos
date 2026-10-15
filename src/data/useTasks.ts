@@ -21,6 +21,15 @@ function rowToTask(row: TaskRow): Task {
   };
 }
 
-export function useTasks(pollMs = 15000): DataHookState<Task> {
-  return useRealtimeTable<TaskRow, Task>('tasks', rowToTask, pollMs);
+export function useTasks(
+  pollMs = 15000,
+  authEpoch?: string | number | null,
+): DataHookState<Task> {
+  return useRealtimeTable<TaskRow, Task>(
+    'tasks',
+    rowToTask,
+    pollMs,
+    '*',
+    authEpoch,
+  );
 }

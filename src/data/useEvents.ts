@@ -23,6 +23,15 @@ function rowToEvent(row: EventRow): EventItem {
   };
 }
 
-export function useEvents(pollMs = 15000): DataHookState<EventItem> {
-  return useRealtimeTable<EventRow, EventItem>('events', rowToEvent, pollMs);
+export function useEvents(
+  pollMs = 15000,
+  authEpoch?: string | number | null,
+): DataHookState<EventItem> {
+  return useRealtimeTable<EventRow, EventItem>(
+    'events',
+    rowToEvent,
+    pollMs,
+    '*',
+    authEpoch,
+  );
 }

@@ -33,10 +33,16 @@ import { TaskList } from './TaskList';
 
 export function Layout() {
   const { session } = useSession();
-  const subjectsState = useSubjects();
-  const slotsState = useScheduleSlots();
-  const tasksState = useTasks();
-  const eventsState = useEvents();
+  // Auth epoch for the board hooks: the signed-in user id (or null when signed
+  // out). It changes exactly when auth settles after SIGNED_IN, driving one
+  // clean resubscribe + refetch with the FINAL token instead of racing the
+  // token-rotation window — the fix for the signed-in "Couldn't load the latest
+  // data" glitch.
+  const authEpoch = session?.user.id ?? null;
+  const subjectsState = useSubjects(undefined, authEpoch);
+  const slotsState = useScheduleSlots(undefined, authEpoch);
+  const tasksState = useTasks(undefined, authEpoch);
+  const eventsState = useEvents(undefined, authEpoch);
   const completions = useTaskCompletions();
 
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(

@@ -15,10 +15,15 @@ function rowToSlot(row: ScheduleSlotRow): ScheduleSlot {
   };
 }
 
-export function useScheduleSlots(pollMs = 15000): DataHookState<ScheduleSlot> {
+export function useScheduleSlots(
+  pollMs = 15000,
+  authEpoch?: string | number | null,
+): DataHookState<ScheduleSlot> {
   return useRealtimeTable<ScheduleSlotRow, ScheduleSlot>(
     'schedule_slots',
     rowToSlot,
     pollMs,
+    '*',
+    authEpoch,
   );
 }

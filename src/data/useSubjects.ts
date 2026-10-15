@@ -17,6 +17,15 @@ function rowToSubject(row: SubjectRow): Subject {
   };
 }
 
-export function useSubjects(pollMs = 15000): DataHookState<Subject> {
-  return useRealtimeTable<SubjectRow, Subject>('subjects', rowToSubject, pollMs);
+export function useSubjects(
+  pollMs = 15000,
+  authEpoch?: string | number | null,
+): DataHookState<Subject> {
+  return useRealtimeTable<SubjectRow, Subject>(
+    'subjects',
+    rowToSubject,
+    pollMs,
+    '*',
+    authEpoch,
+  );
 }

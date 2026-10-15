@@ -19,6 +19,23 @@
  *  - An ALWAYS-ON reconciliation refetches on window 'focus' and
  *    'visibilitychange' (-> visible) so a missed event self-heals regardless of
  *    transport, whether or not the fallback poll is running.
+ *  - Transient-failure resilience (signed-in data-load fix). A single
+ *    `select *` read issued inside the Supabase token-rotation window right
+ *    after SIGNED_IN (OAuth redirect completes, autoRefreshToken swaps the
+ *    access token, the Realtime socket restarts) can come back with a
+ *    recoverable error. `fetchAll` therefore RETRIES a bounded number of times
+ *    with short backoff before it ever flips `status` to 'error', never
+ *    clobbers already-loaded `data` on a failure (last-good rows stay visible),
+ *    and ignores the result of any superseded in-flight fetch so a late failure
+ *    can't overwrite a newer success. Only a persistent failure that exhausts
+ *    the retries surfaces 'error'.
+ *  - Auth-settle refetch. Callers thread an optional `authEpoch` dependency
+ *    (the signed-in user id, or any value that changes on SIGNED_IN) into the
+ *    hook; it is part of the effect deps, so a sign-in drives one clean
+ *    resubscribe + refetch with the FINAL token rather than racing it. This is
+ *    the low-risk dependency approach (vs. subscribing the data layer directly
+ *    to onAuthStateChange); Layout derives it from useSession and passes it to
+ *    the four board hooks.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
@@ -28,6 +45,17 @@ import type {
 import { realtimeFallback, supabase } from '../lib/supabase';
 
 export type DataStatus = 'loading' | 'ready' | 'error';
+
+/**
+ * How many times a failed `select *` is retried before `fetchAll` surfaces
+ * 'error', and the backoff (ms) applied before attempt 2 and attempt 3. These
+ * absorb the brief Supabase token-rotation window after SIGNED_IN without ever
+ * flashing the error bar; a persistent failure still errors after ~1.2s total.
+ */
+const FETCH_MAX_ATTEMPTS = 3;
+const FETCH_BACKOFF_MS = [300, 900];
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface DataHookState<T> {
   data: T[];
@@ -50,12 +78,18 @@ interface Identified {
  *                the Realtime INSERT payload never carries the embed, so a
  *                streamed row simply lacks the embedded field until the next
  *                fetch (focus/poll) fills it in.
+ * @param authEpoch optional value that changes when auth settles (the signed-in
+ *                user id, or null when signed out). Part of the effect deps so a
+ *                sign-in triggers a clean resubscribe + refetch with the final
+ *                token. Omitting it preserves the previous anonymous-only
+ *                behavior.
  */
 export function useRealtimeTable<Row extends Identified, T extends Identified>(
   table: string,
   mapRow: (row: Row) => T,
   pollMs = 15000,
   select = '*',
+  authEpoch?: string | number | null,
 ): DataHookState<T> {
   // The base hook keys strictly by `id`, both for the row payload and the
   // mapped domain item. It delegates to the keyed engine with id extractors so
@@ -68,6 +102,7 @@ export function useRealtimeTable<Row extends Identified, T extends Identified>(
     (item) => item.id,
     pollMs,
     select,
+    authEpoch,
   );
 }
 
@@ -94,6 +129,7 @@ export function useRealtimeTableKeyed<Row, T>(
   keyOfItem: (item: T) => string,
   pollMs = 15000,
   select = '*',
+  authEpoch?: string | number | null,
 ): DataHookState<T> {
   const [data, setData] = useState<T[]>([]);
   const [status, setStatus] = useState<DataStatus>('loading');
@@ -106,25 +142,62 @@ export function useRealtimeTableKeyed<Row, T>(
   keyOfRowRef.current = keyOfRow;
   const keyOfItemRef = useRef(keyOfItem);
   keyOfItemRef.current = keyOfItem;
+  // True while the hook is mounted — never setState after unmount.
+  const mountedRef = useRef(true);
+  // Monotonic id for each fetchAll invocation. A fetch only commits its result
+  // if it is still the newest one; a superseded (older) fetch that finishes
+  // late — including a late FAILURE after a newer success — is ignored so it
+  // cannot clobber state.
+  const fetchSeqRef = useRef(0);
 
   const fetchAll = useCallback(async (): Promise<void> => {
     if (!supabase) {
       // Unconfigured: App renders ConfigError before any hook mounts, but stay
       // safe and report an empty ready state rather than spinning forever.
+      if (!mountedRef.current) return;
       setData([]);
       setStatus('ready');
       return;
     }
-    const { data: rows, error } = await supabase.from(table).select(select);
-    if (error) {
-      setStatus('error');
-      return;
+    const runId = (fetchSeqRef.current += 1);
+    // Only the newest in-flight fetch may commit; older ones are stale.
+    const isCurrent = () => mountedRef.current && runId === fetchSeqRef.current;
+
+    for (let attempt = 0; attempt < FETCH_MAX_ATTEMPTS; attempt += 1) {
+      const { data: rows, error } = await supabase.from(table).select(select);
+      if (!isCurrent()) return;
+      if (!error) {
+        setData((rows as Row[]).map((r) => mapRef.current(r)));
+        setStatus('ready');
+        return;
+      }
+      // Recoverable so far: back off and retry. Crucially we do NOT touch
+      // `data` or `status` here, so last-good rows stay visible and a brief
+      // transient (e.g. the SIGNED_IN token-rotation window) never flashes the
+      // error bar.
+      const backoff = FETCH_BACKOFF_MS[attempt];
+      if (backoff == null) break;
+      await delay(backoff);
+      if (!isCurrent()) return;
     }
-    setData((rows as Row[]).map((r) => mapRef.current(r)));
-    setStatus('ready');
+    // Retries exhausted on a persistent failure — surface the error, but still
+    // keep the last-good `data` so the board does not blank out.
+    if (isCurrent()) setStatus('error');
   }, [table, select]);
 
+  // Track mount state for the retry loop's post-await setState guard. Separate
+  // from the subscription effect's `active` flag because fetchAll outlives any
+  // single effect run (it is also called from focus/visibility/poll handlers).
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Initial unconditional fetch + Realtime subscription + fallback poll.
+  // `authEpoch` is in the deps so a sign-in tears down the old channel and
+  // re-runs the mount fetch + resubscribe with the final token.
   useEffect(() => {
     if (!supabase) {
       setData([]);
@@ -238,7 +311,7 @@ export function useRealtimeTableKeyed<Row, T>(
       document.removeEventListener('visibilitychange', onVisibility);
       void client.removeChannel(channel);
     };
-  }, [fetchAll, pollMs, table]);
+  }, [fetchAll, pollMs, table, authEpoch]);
 
   const retry = useCallback(() => {
     setStatus('loading');
