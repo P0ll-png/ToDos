@@ -84,9 +84,9 @@ export function TaskRow({
         </span>
         <span style={dueText(overdue, Boolean(task.deadline))}>
           {overdue
-            ? `Overdue · ${deadlineText}`
+            ? `Overdue · Deadline: ${deadlineText}`
             : task.deadline
-              ? deadlineText
+              ? `Deadline: ${deadlineText}`
               : 'No deadline'}
         </span>
       </button>

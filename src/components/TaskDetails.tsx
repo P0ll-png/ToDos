@@ -37,6 +37,7 @@ export function TaskDetails({
   const overdue = isOverdue(task);
   const classDone = task.status === 'done';
   const titleId = 'task-details-title';
+  const notesId = 'task-details-notes';
 
   return (
     <div
@@ -75,13 +76,21 @@ export function TaskDetails({
             {overdue ? 'Overdue' : classDone ? 'Done' : 'Pending'}
           </dd>
         </div>
-        {task.notes && (
-          <div style={rowStyle}>
-            <dt style={dtStyle}>Notes</dt>
-            <dd style={ddStyle}>{task.notes}</dd>
-          </div>
-        )}
       </dl>
+
+      <div style={notesBlockStyle}>
+        <label htmlFor={notesId} style={notesLabelStyle}>
+          Notes
+        </label>
+        <textarea
+          id={notesId}
+          readOnly
+          value={task.notes || ''}
+          placeholder="No notes"
+          rows={4}
+          style={notesTextareaStyle}
+        />
+      </div>
 
       {isOfficer && (
         <div style={actionsStyle}>
@@ -147,6 +156,32 @@ const ddStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
   fontSize: '0.875rem',
+};
+
+const notesBlockStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.375rem',
+  margin: '0 0 1rem',
+};
+
+const notesLabelStyle: React.CSSProperties = {
+  fontWeight: 600,
+  color: 'var(--muted)',
+  fontSize: '0.8125rem',
+};
+
+const notesTextareaStyle: React.CSSProperties = {
+  width: '100%',
+  resize: 'vertical',
+  padding: '0.5rem 0.625rem',
+  background: 'var(--surface-2)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'calc(var(--radius) - 4px)',
+  fontSize: '0.875rem',
+  fontFamily: 'inherit',
+  lineHeight: 1.4,
 };
 
 const actionsStyle: React.CSSProperties = {
