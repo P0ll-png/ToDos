@@ -37,9 +37,14 @@ import { AddTaskDialog } from './AddTaskDialog';
 import { AddEventDialog } from './AddEventDialog';
 import { TaskRow } from './TaskRow';
 import { EventRow } from './EventRow';
+import { TaskDetails } from './TaskDetails';
+import { EventDetails } from './EventDetails';
 import { Modal } from './Modal';
 
 type CompletionFilter = 'all' | 'unfinished' | 'finished';
+
+/** Which row's details popup is open (single source of truth). */
+type OpenItem = { kind: 'task' | 'event'; id: string } | null;
 
 interface TaskListProps {
   subjects: Subject[];
@@ -75,6 +80,7 @@ export function TaskList({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<CompletionFilter>('all');
+  const [openItem, setOpenItem] = useState<OpenItem>(null);
 
   const subjectById = useMemo(() => {
     const map = new Map<string, Subject>();
@@ -185,10 +191,7 @@ export function TaskList({
           key={`task:${task.id}`}
           task={task}
           subject={subjectById.get(task.subjectId)}
-          isOfficer={isOfficer}
-          busy={busy}
-          onToggleStatus={handleToggleStatus}
-          onRemove={handleRemoveTask}
+          onOpenDetails={() => setOpenItem({ kind: 'task', id: task.id })}
           signedIn={signedIn}
           completedForMe={completedTaskIds.has(task.id)}
           onToggleCompletion={handleToggleCompletion}
@@ -202,15 +205,20 @@ export function TaskList({
         key={`event:${event.id}`}
         event={event}
         subject={event.subjectId ? subjectById.get(event.subjectId) : undefined}
-        isOfficer={isOfficer}
-        busy={busy}
-        onRemove={handleRemoveEvent}
+        onOpenDetails={() => setOpenItem({ kind: 'event', id: event.id })}
         signedIn={signedIn}
         completedForMe={completedEventIds.has(event.id)}
         onToggleCompletion={handleToggleEventCompletion}
       />
     );
   }
+
+  // Resolve the open popup to a LIVE task/event so a Realtime update to the
+  // open row is reflected; if the row vanished, the popup is treated as closed.
+  const openTask =
+    openItem?.kind === 'task' ? (taskById.get(openItem.id) ?? null) : null;
+  const openEvent =
+    openItem?.kind === 'event' ? (eventById.get(openItem.id) ?? null) : null;
 
   return (
     <section aria-label="Class to-do list" className="card" style={sectionStyle}>
@@ -284,6 +292,34 @@ export function TaskList({
       {showAddEvent && (
         <Modal onClose={() => setShowAddEvent(false)}>
           <AddEventDialog subjects={subjects} onClose={() => setShowAddEvent(false)} />
+        </Modal>
+      )}
+
+      {openTask && (
+        <Modal onClose={() => setOpenItem(null)}>
+          <TaskDetails
+            task={openTask}
+            subject={subjectById.get(openTask.subjectId)}
+            isOfficer={isOfficer}
+            busy={busy}
+            onToggleStatus={handleToggleStatus}
+            onRemove={handleRemoveTask}
+            onClose={() => setOpenItem(null)}
+          />
+        </Modal>
+      )}
+      {openEvent && (
+        <Modal onClose={() => setOpenItem(null)}>
+          <EventDetails
+            event={openEvent}
+            subject={
+              openEvent.subjectId ? subjectById.get(openEvent.subjectId) : undefined
+            }
+            isOfficer={isOfficer}
+            busy={busy}
+            onRemove={handleRemoveEvent}
+            onClose={() => setOpenItem(null)}
+          />
         </Modal>
       )}
     </section>

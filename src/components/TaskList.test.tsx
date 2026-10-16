@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 
 const { useSessionMock } = vi.hoisted(() => ({ useSessionMock: vi.fn() }));
 vi.mock('../context/SessionProvider', () => ({
@@ -92,17 +92,37 @@ function renderList(
 describe('TaskList officer-only controls', () => {
   beforeEach(() => useSessionMock.mockReset());
 
-  it('shows Add task, Add Event, Remove and status toggle for an officer', () => {
+  it('shows Add task and Add Event in the header, and Remove + status toggle inside the task popup for an officer', () => {
     renderList('officer');
     expect(screen.getByRole('button', { name: 'Add task' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Event' })).toBeInTheDocument();
+
+    // Officer controls are NOT on the collapsed row.
     expect(
-      screen.getByRole('button', { name: /Remove Mathematics - Chapter 3/ }),
+      screen.queryByRole('button', { name: /Remove Mathematics - Chapter 3/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Mark done' }),
+    ).not.toBeInTheDocument();
+
+    // Open the task details popup; the officer controls live there.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Details for Mathematics: Chapter 3 exercises',
+      }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('button', {
+        name: /Remove Mathematics - Chapter 3/,
+      }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Mark done' })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: 'Mark done' }),
+    ).toBeInTheDocument();
   });
 
-  it('hides all officer controls for a member', () => {
+  it('hides all officer controls for a member, even inside the popup', () => {
     renderList('member');
     expect(
       screen.queryByRole('button', { name: 'Add task' }),
@@ -116,13 +136,29 @@ describe('TaskList officer-only controls', () => {
     expect(
       screen.queryByRole('button', { name: 'Mark done' }),
     ).not.toBeInTheDocument();
-    // The task itself is still visible to everyone.
+    // The task itself is still visible to everyone (Subject: title format).
     expect(
-      screen.getByText('Mathematics - Chapter 3 exercises'),
+      screen.getByRole('button', {
+        name: 'Open details for Mathematics: Chapter 3 exercises',
+      }),
     ).toBeInTheDocument();
+
+    // Opening the popup still shows no officer controls.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Details for Mathematics: Chapter 3 exercises',
+      }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).queryByRole('button', { name: /Remove Mathematics/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: 'Mark done' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('hides all officer controls for an anonymous visitor', () => {
+  it('hides all officer controls for an anonymous visitor, even inside the popup', () => {
     renderList(null);
     expect(
       screen.queryByRole('button', { name: 'Add task' }),
@@ -137,8 +173,23 @@ describe('TaskList officer-only controls', () => {
       screen.queryByRole('button', { name: 'Mark done' }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText('Mathematics - Chapter 3 exercises'),
+      screen.getByRole('button', {
+        name: 'Open details for Mathematics: Chapter 3 exercises',
+      }),
     ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Details for Mathematics: Chapter 3 exercises',
+      }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).queryByRole('button', { name: /Remove Mathematics/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: 'Mark done' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the empty state when there are no tasks or events', () => {
@@ -152,16 +203,28 @@ describe('TaskList merged tasks + events', () => {
 
   it('renders events with a type badge (icon + text, not color-only)', () => {
     renderList('member');
-    // The event row shows the title and its EventBadge (text label "Exam").
-    expect(screen.getByText('Midterm exam')).toBeInTheDocument();
+    // The event row shows the title (via its open-details button) and the
+    // EventBadge (text label "Exam").
+    expect(
+      screen.getByRole('button', { name: 'Open details for event Midterm exam' }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('event-badge-exam')).toBeInTheDocument();
     expect(screen.getByText('Exam')).toBeInTheDocument();
   });
 
-  it('shows an officer Remove control on an event row', () => {
+  it('shows an officer Remove control inside the event popup', () => {
     renderList('officer');
+    // Not on the collapsed row.
     expect(
-      screen.getByRole('button', { name: 'Remove event Midterm exam' }),
+      screen.queryByRole('button', { name: 'Remove event Midterm exam' }),
+    ).not.toBeInTheDocument();
+    // Open the event popup; Remove lives there.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Details for event Midterm exam' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('button', { name: 'Remove event Midterm exam' }),
     ).toBeInTheDocument();
   });
 });
@@ -230,9 +293,13 @@ describe('TaskList personal tracker (completion checkbox + filter)', () => {
     );
     // The unfinished task is filtered out...
     expect(
-      screen.queryByText('Mathematics - Chapter 3 exercises'),
+      screen.queryByRole('button', {
+        name: 'Open details for Mathematics: Chapter 3 exercises',
+      }),
     ).not.toBeInTheDocument();
     // ...but the event always shows.
-    expect(screen.getByText('Midterm exam')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open details for event Midterm exam' }),
+    ).toBeInTheDocument();
   });
 });

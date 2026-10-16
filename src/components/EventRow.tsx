@@ -1,19 +1,29 @@
 /**
- * EventRow — one event in the right-hand merged list. Shows the EventBadge
- * (icon + text + token, so type is never color-only), the title, the optional
- * subject, the date and optional time range, and an optional location. Officers
- * get a Remove button (RLS-backed; UI convenience only — the DB rejects forged
- * writes). Members and anon see a read-only row.
+ * EventRow — one collapsed event row in the right-hand merged list. Mirrors
+ * TaskRow: it shows the EventBadge (type is never color-only), "Subject: title"
+ * (or just the title when the event has no subject), an accent-colored
+ * rounded due-date pill (event date + optional time range), and a "Details"
+ * button. Events always have a date, so they always get the accent pill.
+ *
+ * Clicking the title/pill region OR the Details button opens the details popup
+ * (owned by TaskList) via onOpenDetails. All metadata (location, notes, time)
+ * and the officer "Remove" control live INSIDE that popup — never on the
+ * collapsed row.
+ *
+ * Personal tracker: when signed in, a leading checkbox reflects the viewer's
+ * own completion; a completed row is dimmed/struck with an sr-only "(done)".
+ * The checkbox is a sibling of the buttons (never nested) so it never opens the
+ * popup. Anon visitors see no checkbox.
  */
 import type { EventItem, Subject } from '../lib/types';
+import { eventTimeLabel } from '../lib/event-time';
 import { EventBadge } from './EventBadge';
 
 interface EventRowProps {
   event: EventItem;
   subject: Subject | undefined;
-  isOfficer: boolean;
-  busy: boolean;
-  onRemove: (event: EventItem) => void;
+  /** Open the details popup for this event (owned by TaskList). */
+  onOpenDetails: () => void;
   /** Null when signed out: no personal checkbox is rendered. */
   signedIn: boolean;
   /** Whether the viewer has marked this event done for themselves. */
@@ -22,27 +32,15 @@ interface EventRowProps {
   onToggleCompletion: (event: EventItem, next: boolean) => void;
 }
 
-/** 'HH:MM:SS' / 'HH:MM' -> 'HH:MM'. */
-function hhmm(time: string): string {
-  return time.slice(0, 5);
-}
-
 export function EventRow({
   event,
   subject,
-  isOfficer,
-  busy,
-  onRemove,
+  onOpenDetails,
   signedIn,
   completedForMe,
   onToggleCompletion,
 }: EventRowProps) {
-  const timeLabel =
-    event.startTime == null
-      ? ''
-      : event.endTime == null
-        ? ` · ${hhmm(event.startTime)}`
-        : ` · ${hhmm(event.startTime)}–${hhmm(event.endTime)}`;
+  const timeLabel = eventTimeLabel(event);
 
   return (
     <li style={rowStyle}>
@@ -56,53 +54,53 @@ export function EventRow({
         />
       )}
 
-      <div
-        style={{
-          minWidth: 0,
-          flex: 1,
-          ...(completedForMe
-            ? { color: 'var(--task-done)', textDecoration: 'line-through' }
-            : null),
-        }}
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        aria-label={`Open details for event ${event.title}`}
+        style={rowOpenStyle}
       >
-        <div style={titleRowStyle}>
-          <EventBadge type={event.type} />
-          <span style={{ fontWeight: 600 }}>{event.title}</span>
-          {completedForMe && <span className="sr-only"> (done)</span>}
-        </div>
-        <p
-          className="muted"
-          style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--muted)' }}
+        <EventBadge type={event.type} />
+        <span
+          style={{
+            ...titleStyle,
+            ...(completedForMe
+              ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+              : null),
+          }}
         >
-          {subject ? `${subject.name} · ` : ''}
+          {subject ? (
+            <>
+              <strong>{subject.name}</strong>: {event.title}
+            </>
+          ) : (
+            event.title
+          )}
+          {completedForMe && <span className="sr-only"> (done)</span>}
+        </span>
+        <span style={accentPillStyle}>
           {event.eventDate}
           {timeLabel}
-          {event.location ? ` · ${event.location}` : ''}
-        </p>
-      </div>
+        </span>
+      </button>
 
-      {isOfficer && (
-        <div style={controlsStyle}>
-          <button
-            type="button"
-            onClick={() => onRemove(event)}
-            disabled={busy}
-            aria-label={`Remove event ${event.title}`}
-            style={removeButtonStyle}
-          >
-            Remove
-          </button>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        aria-label={`Details for event ${event.title}`}
+        style={detailsButtonStyle}
+      >
+        Details
+      </button>
     </li>
   );
 }
 
 const rowStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
-  justifyContent: 'space-between',
-  gap: '0.75rem',
+  alignItems: 'center',
+  gap: '0.5rem',
+  flexWrap: 'wrap',
   padding: '0.625rem 0.75rem',
   borderRadius: 'calc(var(--radius) - 4px)',
   background: 'var(--surface-2)',
@@ -113,28 +111,49 @@ const checkboxStyle: React.CSSProperties = {
   flexShrink: 0,
   width: '1.1rem',
   height: '1.1rem',
-  marginTop: '0.15rem',
   accentColor: 'var(--accent)',
 };
 
-const titleRowStyle: React.CSSProperties = {
+const rowOpenStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
+  flex: 1,
+  minWidth: 0,
   gap: '0.5rem',
   flexWrap: 'wrap',
+  alignItems: 'center',
+  textAlign: 'left',
+  background: 'transparent',
+  border: 0,
+  color: 'inherit',
+  cursor: 'pointer',
+  padding: 0,
+  font: 'inherit',
 };
 
-const controlsStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: '0.375rem',
+const titleStyle: React.CSSProperties = {
+  minWidth: 0,
+  fontWeight: 500,
+};
+
+const accentPillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
   flexShrink: 0,
+  padding: '0.125rem 0.5rem',
+  borderRadius: 'var(--radius)',
+  fontSize: '0.75rem',
+  fontWeight: 600,
+  background: 'var(--accent)',
+  color: 'var(--accent-contrast)',
 };
 
-const removeButtonStyle: React.CSSProperties = {
-  padding: '0.25rem 0.5rem',
+const detailsButtonStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: '0.25rem 0.625rem',
   background: 'var(--surface)',
-  color: 'var(--danger)',
-  border: '1px solid var(--danger)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
   borderRadius: 'calc(var(--radius) - 6px)',
   fontSize: '0.8125rem',
   fontWeight: 500,

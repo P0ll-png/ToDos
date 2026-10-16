@@ -1,16 +1,24 @@
 /**
- * TaskRow — one row of the full class to-do list: "Subject - Task" plus date
- * given and deadline. Overdue pending rows are flagged with --danger.
+ * TaskRow — one collapsed row of the full class to-do list. It shows ONLY three
+ * things, laid out for small/mobile screens:
+ *   1. "Subject: title" (subject bold, then the task title);
+ *   2. an accent-colored rounded due-date pill (danger "Overdue · …" when the
+ *      task is overdue, neutral "No deadline" when it has none) — overdue is
+ *      never color-only;
+ *   3. a "Details" button.
+ *
+ * Clicking the title/pill region OR the Details button opens a details popup
+ * (owned by TaskList) via onOpenDetails. The full metadata and the officer
+ * "Mark done/Reopen" + "Remove" controls live INSIDE that popup — never on the
+ * collapsed row.
  *
  * Personal tracker (FR-2.6): when the viewer is signed in, a leading checkbox
- * reflects whether THEY have marked the task done (completedTaskIds.has). A
- * completed row is dimmed (--task-done) and struck through, with the checkbox
- * state and an sr-only "(done)" so completion is never color-only. The checkbox
- * writes ONLY the per-user task_completions table — never tasks.status. Anon
- * visitors see no checkbox.
- *
- * The officer remove button and class-status toggle render ONLY for officers.
- * This is UI convenience only — the DB rejects forged writes regardless (RLS).
+ * reflects whether THEY have marked the task done. A completed row is dimmed
+ * (--task-done) and struck through, with an sr-only "(done)" so completion is
+ * never color-only. The checkbox writes ONLY the per-user task_completions
+ * table — never tasks.status. Anon visitors see no checkbox. The checkbox is a
+ * sibling of the open/Details buttons (never nested) so it never opens the
+ * popup.
  */
 import type { Subject, Task } from '../lib/types';
 import { isOverdue, formatDeadline } from '../lib/derive';
@@ -18,10 +26,8 @@ import { isOverdue, formatDeadline } from '../lib/derive';
 interface TaskRowProps {
   task: Task;
   subject: Subject | undefined;
-  isOfficer: boolean;
-  busy: boolean;
-  onToggleStatus: (task: Task) => void;
-  onRemove: (task: Task) => void;
+  /** Open the details popup for this task (owned by TaskList). */
+  onOpenDetails: () => void;
   /** Null when signed out: no personal checkbox is rendered. */
   signedIn: boolean;
   /** Whether the viewer has marked this task done for themselves. */
@@ -33,17 +39,14 @@ interface TaskRowProps {
 export function TaskRow({
   task,
   subject,
-  isOfficer,
-  busy,
-  onToggleStatus,
-  onRemove,
+  onOpenDetails,
   signedIn,
   completedForMe,
   onToggleCompletion,
 }: TaskRowProps) {
   const overdue = isOverdue(task);
   const subjectName = subject?.name ?? 'Unknown subject';
-  const classDone = task.status === 'done';
+  const deadlineText = task.deadline ? formatDeadline(task.deadline) : '';
 
   return (
     <li
@@ -62,66 +65,56 @@ export function TaskRow({
         />
       )}
 
-      <div
-        style={{
-          minWidth: 0,
-          flex: 1,
-          ...(completedForMe
-            ? { color: 'var(--task-done)', textDecoration: 'line-through' }
-            : null),
-        }}
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        aria-label={`Open details for ${subjectName}: ${task.title}`}
+        style={rowOpenStyle}
       >
-        <div style={titleRowStyle}>
-          <span style={{ fontWeight: 600 }}>
-            {subjectName} - {task.title}
-          </span>
-          {completedForMe && <span className="sr-only"> (done)</span>}
-          {overdue && <span style={overdueBadgeStyle}>Overdue</span>}
-          {classDone && (
-            <span className="muted" style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>
-              Done
-            </span>
-          )}
-        </div>
-        <p
-          className="muted"
-          style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--muted)' }}
+        <span
+          style={{
+            ...titleStyle,
+            ...(completedForMe
+              ? { color: 'var(--task-done)', textDecoration: 'line-through' }
+              : null),
+          }}
         >
-          Given {task.givenDate}
-          {task.deadline ? ` · Due ${formatDeadline(task.deadline)}` : ' · No deadline'}
-        </p>
-      </div>
+          <strong>{subjectName}</strong>: {task.title}
+          {completedForMe && <span className="sr-only"> (done)</span>}
+        </span>
+        <span style={dueText(overdue, Boolean(task.deadline))}>
+          {overdue
+            ? `Overdue · ${deadlineText}`
+            : task.deadline
+              ? deadlineText
+              : 'No deadline'}
+        </span>
+      </button>
 
-      {isOfficer && (
-        <div style={controlsStyle}>
-          <button
-            type="button"
-            onClick={() => onToggleStatus(task)}
-            disabled={busy}
-            style={secondaryButtonStyle}
-          >
-            {classDone ? 'Reopen' : 'Mark done'}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(task)}
-            disabled={busy}
-            aria-label={`Remove ${subjectName} - ${task.title}`}
-            style={removeButtonStyle}
-          >
-            Remove
-          </button>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        aria-label={`Details for ${subjectName}: ${task.title}`}
+        style={detailsButtonStyle}
+      >
+        Details
+      </button>
     </li>
   );
 }
 
+/** Pill style by overdue/has-deadline state. */
+function dueText(overdue: boolean, hasDeadline: boolean): React.CSSProperties {
+  if (overdue) return { ...pillBaseStyle, ...dangerPillStyle };
+  if (hasDeadline) return { ...pillBaseStyle, ...accentPillStyle };
+  return { ...pillBaseStyle, ...neutralPillStyle };
+}
+
 const rowStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
-  justifyContent: 'space-between',
-  gap: '0.75rem',
+  alignItems: 'center',
+  gap: '0.5rem',
+  flexWrap: 'wrap',
   padding: '0.625rem 0.75rem',
   borderRadius: 'calc(var(--radius) - 4px)',
   background: 'var(--surface-2)',
@@ -131,44 +124,64 @@ const checkboxStyle: React.CSSProperties = {
   flexShrink: 0,
   width: '1.1rem',
   height: '1.1rem',
-  marginTop: '0.15rem',
   accentColor: 'var(--accent)',
 };
 
-const titleRowStyle: React.CSSProperties = {
+const rowOpenStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
+  flex: 1,
+  minWidth: 0,
   gap: '0.5rem',
   flexWrap: 'wrap',
+  alignItems: 'center',
+  textAlign: 'left',
+  background: 'transparent',
+  border: 0,
+  color: 'inherit',
+  cursor: 'pointer',
+  padding: 0,
+  font: 'inherit',
 };
 
-const controlsStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: '0.375rem',
+const titleStyle: React.CSSProperties = {
+  minWidth: 0,
+  fontWeight: 500,
+};
+
+const pillBaseStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
   flexShrink: 0,
+  padding: '0.125rem 0.5rem',
+  borderRadius: 'var(--radius)',
+  fontSize: '0.75rem',
+  fontWeight: 600,
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
-  padding: '0.25rem 0.5rem',
+const accentPillStyle: React.CSSProperties = {
+  background: 'var(--accent)',
+  color: 'var(--accent-contrast)',
+};
+
+const dangerPillStyle: React.CSSProperties = {
+  background: 'var(--danger)',
+  color: 'var(--danger-contrast)',
+};
+
+const neutralPillStyle: React.CSSProperties = {
+  background: 'var(--surface)',
+  color: 'var(--muted)',
+  border: '1px solid var(--border)',
+};
+
+const detailsButtonStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: '0.25rem 0.625rem',
   background: 'var(--surface)',
   color: 'var(--text)',
   border: '1px solid var(--border)',
   borderRadius: 'calc(var(--radius) - 6px)',
   fontSize: '0.8125rem',
   fontWeight: 500,
-};
-
-const removeButtonStyle: React.CSSProperties = {
-  ...secondaryButtonStyle,
-  color: 'var(--danger)',
-  borderColor: 'var(--danger)',
-};
-
-const overdueBadgeStyle: React.CSSProperties = {
-  fontSize: '0.6875rem',
-  fontWeight: 600,
-  padding: '0.0625rem 0.375rem',
-  borderRadius: '999px',
-  background: 'var(--danger)',
-  color: 'var(--danger-contrast)',
 };
